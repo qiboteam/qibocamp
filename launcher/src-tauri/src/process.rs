@@ -41,6 +41,10 @@ pub struct ProcessInfo {
     pub status: String,
     pub exit_code: Option<i32>,
     pub started_at: u64,
+    /// What the interface started it for — its options, the connection whose
+    /// reports it serves — kept here so that every page and window knows it,
+    /// a page loaded again included. Opaque to this side.
+    pub launch: Option<serde_json::Value>,
 }
 
 #[derive(Clone, Serialize)]
@@ -167,6 +171,22 @@ impl Supervisor {
             entries.values().map(|entry| entry.info.clone()).collect();
         processes.sort_by_key(|process| process.started_at);
         processes
+    }
+
+    /// Record what a process was started for, and tell every window.
+    pub fn set_launch(&self, app: &AppHandle, id: &str, launch: serde_json::Value) -> bool {
+        let info = {
+            let Ok(mut entries) = self.entries.lock() else {
+                return false;
+            };
+            let Some(entry) = entries.get_mut(id) else {
+                return false;
+            };
+            entry.info.launch = Some(launch);
+            entry.info.clone()
+        };
+        let _ = app.emit(PROCESS_EVENT, info);
+        true
     }
 
     pub fn log(&self, id: &str) -> Vec<String> {
@@ -312,6 +332,7 @@ impl Supervisor {
             status: "running".to_string(),
             exit_code: None,
             started_at: now_millis(),
+            launch: None,
         };
 
         if let Ok(mut entries) = self.entries.lock() {
@@ -856,6 +877,11 @@ pub fn start_notebook(
 #[tauri::command]
 pub fn processes(supervisor: State<Supervisor>) -> Vec<ProcessInfo> {
     supervisor.list()
+}
+
+#[tauri::command]
+pub fn set_process_launch(app: AppHandle, supervisor: State<Supervisor>, id: String, launch: serde_json::Value) -> bool {
+    supervisor.set_launch(&app, &id, launch)
 }
 
 #[tauri::command]

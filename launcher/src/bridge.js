@@ -69,6 +69,7 @@ export const desktop = {
   /** `qibocamp notebook rebuild`: the kernel environment destroyed and made again. */
   rebuildNotebook: options => call('rebuild_notebook', { options }),
   processes: () => call('processes'),
+  setProcessLaunch: (id, launch) => call('set_process_launch', { id, launch }),
   processLog: id => call('process_log', { id }),
   stopProcess: id => call('stop_process', { id }),
   forgetProcess: id => call('forget_process', { id }),

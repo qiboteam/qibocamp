@@ -262,15 +262,34 @@ export const machines = computed(() => machineList(state.machines))
 export async function startAgent(request) {
   const options = agentRunOptions(request, state.agents?.document?.agents?.[request.name])
   const info = await desktop.startAgent({ name: options.name, objective: options.objective })
-  state.launches[info.id] = { kind: 'agent', options, url: null }
+  recordLaunch(info.id, { kind: 'agent', options, url: null })
   mergeProcess(info)
   const queue = queueOf(options)
   if (queue) refreshQueue(queue).catch(() => {})
   return info
 }
 
+/**
+ * Record what a process was started for: here at once, and on the native
+ * side, which keeps it with the process for every page and window — a page
+ * loaded again, another window — to find.
+ */
+export function recordLaunch(id, launch) {
+  state.launches[id] = launch
+  desktop.setProcessLaunch(id, JSON.parse(JSON.stringify(launch))).catch(() => {})
+  return launch
+}
+
+/** The launches the native side kept: those of processes this page did not start, or no longer remembers. */
+function adoptLaunches(processes) {
+  for (const process of processes) {
+    if (process.launch) state.launches[process.id] = process.launch
+  }
+}
+
 export async function refreshProcesses() {
   state.processes = await load(desktop.processes, [])
+  adoptLaunches(state.processes)
   return state.processes
 }
 
@@ -416,7 +435,7 @@ const pending = new Map()
  */
 export async function startServer(options, { url = null } = {}) {
   const info = await withQibocamp(() => desktop.startServer(options))
-  state.launches[info.id] = { kind: 'server', options, url }
+  recordLaunch(info.id, { kind: 'server', options, url })
   mergeProcess(info)
   if (!info.url && options.ssh) {
     pending.set(info.id, { options, url })
@@ -479,7 +498,7 @@ export async function updateServerInstallation(server) {
 /** Open a notebook session, installing the command line first if needed. */
 export async function startNotebook(options) {
   const info = await withQibocamp(() => desktop.startNotebook(options))
-  state.launches[info.id] = { kind: 'notebook', options, url: null }
+  recordLaunch(info.id, { kind: 'notebook', options, url: null })
   mergeProcess(info)
   // Dispatched to a partition: its queue is asked now, so the answer is
   // there by the time Running shows the card — one question, shared with
@@ -512,7 +531,7 @@ export async function startNotebookReports(options, name = null, { key = noteboo
   const port = ssh ? 8000 : await desktop.freePort()
   const server = reportServerOptions(options, { name, home, port })
   const info = await startServer(server)
-  state.launches[info.id].notebook = key
+  recordLaunch(info.id, { ...state.launches[info.id], notebook: key })
   return info
 }
 
@@ -531,7 +550,7 @@ export async function rebuildNotebook(options) {
   const info = await withQibocamp(() => desktop.rebuildNotebook(options))
   // Through SLURM only when asked: then its queue is shown in Running, as a session's is.
   const queued = options.rebuild_on_compute ? options : { ...options, queue: undefined }
-  state.launches[info.id] = { kind: 'rebuild', options: queued, rerun: options, url: null }
+  recordLaunch(info.id, { kind: 'rebuild', options: queued, rerun: options, url: null })
   mergeProcess(info)
   const queue = queueOf(queued)
   if (queue) refreshQueue(queue).catch(() => {})
@@ -606,6 +625,8 @@ export function alert(title, body, { page = null, link = null } = {}) {
 }
 
 function mergeProcess(info) {
+  // The native side's record is the reference: every window gets the latest.
+  if (info.launch) state.launches[info.id] = info.launch
   const index = state.processes.findIndex(process => process.id === info.id)
   const previous = index >= 0 ? state.processes[index] : null
   if (index >= 0) state.processes[index] = info
@@ -936,7 +957,7 @@ export async function refreshAgentTools() {
 /** Install qibocal-agent at a branch, tag or commit, as a process of its own in Running. */
 export async function installAgentTools(reference = 'main') {
   const info = await withQibocamp(() => desktop.installAgentTools(reference))
-  state.launches[info.id] = { kind: 'tools', options: { reference }, url: null }
+  recordLaunch(info.id, { kind: 'tools', options: { reference }, url: null })
   mergeProcess(info)
   return info
 }

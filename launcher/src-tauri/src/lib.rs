@@ -180,6 +180,7 @@ pub fn run() {
             process::rebuild_notebook,
             process::processes,
             process::process_log,
+            process::set_process_launch,
             process::stop_process,
             process::forget_process,
             process::quit,
