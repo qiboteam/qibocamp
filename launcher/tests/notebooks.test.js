@@ -133,7 +133,7 @@ test('a notebook report server serves the reports folder, relative to where the 
 test('remote execution connections share the notebook fields and keep their own', async () => {
   const { REMOTE_FIELDS, defaultRemoteOptions, describeRemote, normalizeRemoteOptions, rebuildOptions } = await import('../src/lib/remotes.js')
   const names = REMOTE_FIELDS.map(field => field.name)
-  for (const name of ['ssh', 'queue', 'slurm', 'workdir', 'venv', 'requirements', 'rebuild_on_compute', 'platform', 'python', 'timeout', 'reports']) {
+  for (const name of ['ssh', 'queue', 'slurm', 'workdir', 'venv', 'requirements', 'rebuild_on_compute', 'platform', 'platforms_dir', 'python', 'timeout', 'reports']) {
     assert.ok(names.includes(name), `${name}, as remotes.json has it`)
   }
   assert.equal(names.includes('marimo'), false, 'nothing a notebook alone has')
@@ -146,7 +146,9 @@ test('remote execution connections share the notebook fields and keep their own'
   assert.deepEqual(rebuildOptions({ ssh: 'me@login' }, 'QW5Q lab'), { ssh: 'me@login', venv: '_remote/QW5Q-lab' },
     'its own environment, apart from a session of the same name')
   assert.equal(normalizeRemoteOptions({ ...defaultRemoteOptions(), venv: 'qibocal' }).options.venv, 'qibocal', 'sharing one is a choice, kept')
-  assert.deepEqual(rebuildOptions({ ssh: 'me@login', queue: 'qpu', platform: 'qw11q', python: '3.12', venv: 'lab', reports: 'out' }),
+  assert.deepEqual(normalizeRemoteOptions({ ...defaultRemoteOptions(), platforms_dir: '~/platforms' }).options, { platforms_dir: '~/platforms' },
+    'the platforms folder, as qibocal-widgets reads it')
+  assert.deepEqual(rebuildOptions({ ssh: 'me@login', queue: 'qpu', platform: 'qw11q', platforms_dir: '~/platforms', python: '3.12', venv: 'lab', reports: 'out' }),
     { ssh: 'me@login', queue: 'qpu', venv: 'lab' }, 'what qibocamp notebook rebuild takes, and nothing else')
 })
 

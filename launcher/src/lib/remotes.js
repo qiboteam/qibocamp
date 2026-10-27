@@ -36,6 +36,14 @@ export const REMOTE_FIELDS = [
     help: 'Empty: the one the notebook\'s executor names.',
     info: 'The Qibolab platform the jobs create, by name, on the remote side; its parameters and calibration travel with each job.'
   },
+  {
+    name: 'platforms_dir',
+    label: 'Platforms folder',
+    type: 'text',
+    placeholder: '~/platforms',
+    help: 'Empty: QIBOLAB_PLATFORMS of the remote environment.',
+    info: 'Where the platforms are on the remote side; it replaces QIBOLAB_PLATFORMS there for every remote step, ~ expanded there, so the connection needs no variable set on that machine. The same setting as an agent configuration\'s.'
+  },
   { ...shared('slurm'), info: 'Only once a partition is selected; time limits, memory and GPUs go here, as srun takes them.' },
   { ...shared('workdir'), info: 'Directory the jobs start from on the access node.' },
   {
