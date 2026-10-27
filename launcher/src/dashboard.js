@@ -139,7 +139,4 @@ servers().then(registered => {
   menu(registered)
   // The View menu names the level: rebuilt when it changes.
   onZoom(() => menu(registered))
-  // The menu's actions run in the page that installed it last; a window
-  // coming to the front — after another closed — installs it again.
-  window.addEventListener('focus', () => menu(registered))
 })

@@ -74,10 +74,6 @@ onMounted(async () => {
   uninstallZoom = installZoom()
   // The View menu names the level: rebuilt when it changes.
   forgetZoom = onZoom(refreshMenu)
-  // The application menu is one for every window, and its actions run in
-  // the page that installed it last: a window that closes takes them with
-  // it. The window that comes to the front installs the menu again.
-  window.addEventListener('focus', refreshMenu)
   uninstallShortcuts = installShortcuts({
     go: name => router.push({ name }),
     dashboard: () => openDashboard(),
@@ -91,7 +87,6 @@ onBeforeUnmount(() => {
   uninstallShortcuts()
   uninstallZoom()
   forgetZoom()
-  window.removeEventListener('focus', refreshMenu)
 })
 
 watch(() => state.servers.map(server => `${server.id}:${server.name}`).join('|'), refreshMenu)

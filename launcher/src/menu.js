@@ -1,8 +1,12 @@
 /**
  * The system menu, built from the application side.
  *
- * Menu items carry plain callbacks, so a section jump or a quick action is the
- * very same function the interface calls, with no extra event plumbing.
+ * Items carry ids, and the actions are the very functions the interface
+ * calls, kept by each page: the native side hands a chosen item to the window
+ * in front, whose page runs its action. The menu is installed again when its
+ * content changes — the servers, the zoom level — and never because a window
+ * took the focus: on Linux that replaces every window's menu bar, which moves
+ * the focus, which installed it again, endlessly.
  */
 import { isDesktop } from './bridge.js'
 import { sections } from './router.js'
@@ -10,8 +14,22 @@ import { describeZoom, zoom, zoomLevel } from './zoom.js'
 
 const MAX_QUICK_SERVERS = 8
 
+/** The event `background::route_menu_event` sends, on the native side. */
+const MENU_EVENT = 'qibocamp://menu'
+
+/** What each item does in this page, by id; filled by `build`. */
+let actions = new Map()
+
 async function build({ goTo, openDashboard, launchServer, servers, quit }) {
-  const { Menu, Submenu, MenuItem, PredefinedMenuItem } = await import('@tauri-apps/api/menu')
+  const { Menu, Submenu, MenuItem: NativeItem, PredefinedMenuItem } = await import('@tauri-apps/api/menu')
+  const next = new Map()
+  // An item and its action: the action stays here, the item only names it.
+  const MenuItem = {
+    new: ({ action, ...options }) => {
+      if (action) next.set(options.id, action)
+      return NativeItem.new(options)
+    }
+  }
 
   const separator = () => PredefinedMenuItem.new({ item: 'Separator' })
   const items = []
@@ -81,8 +99,7 @@ async function build({ goTo, openDashboard, launchServer, servers, quit }) {
     quick.push(await MenuItem.new({
       id: 'menu-server-empty',
       text: 'No registered server',
-      enabled: false,
-      action: () => {}
+      enabled: false
     }))
   }
   items.push(await Submenu.new({
@@ -142,7 +159,9 @@ async function build({ goTo, openDashboard, launchServer, servers, quit }) {
     ]
   }))
 
-  return Menu.new({ items })
+  const menu = await Menu.new({ items })
+  actions = next
+  return menu
 }
 
 /**
@@ -152,9 +171,20 @@ async function build({ goTo, openDashboard, launchServer, servers, quit }) {
  * servers; failures are ignored on purpose, a missing menu must never keep
  * the interface itself from starting.
  */
+let listening = false
+
+/** Run the actions the native side routes to this window. */
+async function listenToMenu() {
+  if (listening) return
+  listening = true
+  const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow')
+  await getCurrentWebviewWindow().listen(MENU_EVENT, ({ payload }) => actions.get(payload)?.())
+}
+
 export async function installMenu(handlers) {
   if (!isDesktop) return false
   try {
+    await listenToMenu()
     const menu = await build(handlers)
     await menu.setAsAppMenu()
     return true

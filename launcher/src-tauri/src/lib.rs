@@ -126,6 +126,7 @@ pub fn run() {
             background::install_tray(app.handle())?;
             Ok(())
         })
+        .on_menu_event(|app, event| background::route_menu_event(app, event.id().as_ref()))
         // Closing the last window on screen hides it: the launcher stays in
         // the background, its servers and sessions with it, and comes back
         // from the tray, the dock, or a new window. Any other window simply

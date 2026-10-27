@@ -10,7 +10,7 @@
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, EventTarget, Manager};
 use tauri_plugin_notification::NotificationExt;
 
 use crate::process::Supervisor;
@@ -33,6 +33,32 @@ pub fn show_windows(app: &AppHandle) {
             let _ = window.set_focus();
             first = false;
         }
+    }
+}
+
+/// The event a page receives when an item of the application menu is chosen.
+pub const MENU_EVENT: &str = "qibocamp://menu";
+
+/// An item of the application menu chosen: handed to the window in front —
+/// else one on screen, else the main one — whose page runs its action.
+///
+/// The pages build the menu, but its actions are not theirs to keep: a page
+/// that installed it may have closed, and reinstalling it whenever a window
+/// takes the focus loops on Linux, where setting the menu replaces the menu
+/// bar of every window and moves the focus again. So the menu is installed
+/// when its content changes, and its items are routed here.
+pub fn route_menu_event(app: &AppHandle, id: &str) {
+    if !id.starts_with("menu-") {
+        return;
+    }
+    let windows = app.webview_windows();
+    let target = windows
+        .values()
+        .find(|window| window.is_focused().unwrap_or(false))
+        .or_else(|| windows.values().find(|window| window.is_visible().unwrap_or(false)))
+        .or_else(|| windows.get(crate::MAIN_WINDOW));
+    if let Some(window) = target {
+        let _ = app.emit_to(EventTarget::webview_window(window.label()), MENU_EVENT, id);
     }
 }
 
