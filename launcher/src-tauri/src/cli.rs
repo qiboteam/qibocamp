@@ -239,8 +239,22 @@ fn program_names() -> Vec<&'static str> {
     }
 }
 
+/// A file that can be run as the command line: never this application itself.
+///
+/// The desktop binary is `qibocamp-desktop`, but should a `qibocamp` on the
+/// `PATH` ever be the application — a renamed or hand-made link — running it
+/// as the command line would start another instance, which would do the same,
+/// endlessly: windows and tray icons without end.
 fn is_executable(path: &Path) -> bool {
-    path.is_file()
+    path.is_file() && !is_this_application(path)
+}
+
+fn is_this_application(path: &Path) -> bool {
+    let canonical = |path: &Path| fs::canonicalize(path).ok();
+    match (std::env::current_exe().ok().as_deref().and_then(canonical), canonical(path)) {
+        (Some(this), Some(other)) => this == other,
+        _ => false,
+    }
 }
 
 /// Accept either the interpreter itself or the virtual environment holding it.
