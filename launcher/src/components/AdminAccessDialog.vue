@@ -24,10 +24,10 @@
           <input v-else :id="id" v-model.trim="username" type="text" class="lx-input" placeholder="admin" spellcheck="false" autocomplete="username" autocapitalize="off" />
         </form-field>
         <form-field v-slot="{ id }" label="New password">
-          <input :id="id" v-model="password" type="password" class="lx-input" autocomplete="new-password" />
+          <password-input :id="id" v-model="password" class="lx-input" autocomplete="new-password" />
         </form-field>
         <form-field v-slot="{ id }" label="Repeat it" :error="mismatch ? 'The two passwords differ.' : ''">
-          <input :id="id" v-model="repeated" type="password" class="lx-input" autocomplete="new-password" />
+          <password-input :id="id" v-model="repeated" class="lx-input" autocomplete="new-password" />
         </form-field>
       </div>
 
@@ -45,6 +45,7 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
+import PasswordInput from '@dashboard/components/PasswordInput.vue'
 import FormField from './FormField.vue'
 import { desktop } from '../bridge.js'
 import { launchOptionsFor, withQibocamp } from '../state.js'

@@ -112,9 +112,8 @@
             <label class="block text-[11px] font-medium text-gray-500 uppercase tracking-wider mb-1">
               {{ inviteData?.target_username ? 'Set / Update Password' : 'Password' }}
             </label>
-            <input
+            <PasswordInput
               v-model="form.password"
-              type="password"
               required
               autocomplete="new-password"
               placeholder="At least 4 characters"
@@ -126,9 +125,8 @@
             <label class="block text-[11px] font-medium text-gray-500 uppercase tracking-wider mb-1">
               Confirm Password
             </label>
-            <input
+            <PasswordInput
               v-model="form.confirmPassword"
-              type="password"
               required
               autocomplete="new-password"
               placeholder="Re-enter password"
@@ -164,6 +162,7 @@ import { ref, reactive, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { state, registerWithInvite } from '../../store.js'
 import { apiGetInvite, apiGetPasswordReset } from '../../api.js'
+import PasswordInput from '../PasswordInput.vue'
 
 const router = useRouter()
 const validating = ref(false)

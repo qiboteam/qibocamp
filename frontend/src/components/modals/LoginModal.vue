@@ -59,9 +59,8 @@
           <label class="block text-[11px] font-medium text-gray-500 uppercase tracking-wider mb-1">
             Password
           </label>
-          <input
+          <PasswordInput
             v-model="password"
-            type="password"
             required
             autocomplete="current-password"
             placeholder="••••••••"
@@ -107,6 +106,7 @@
 import { ref, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { state, loginActiveServer } from '../../store.js'
+import PasswordInput from '../PasswordInput.vue'
 
 const router = useRouter()
 const route = useRoute()
