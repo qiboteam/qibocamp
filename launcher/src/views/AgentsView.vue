@@ -272,7 +272,11 @@ const { focused } = usePageKeys({
   }
 })
 
-/** Write a configuration where it is kept — and push it, when that is another machine. */
+/**
+ * Write a configuration where it is kept — and push it, when that is another
+ * machine — and say so. True once kept: a push that failed leaves it kept here,
+ * and says that too.
+ */
 async function store(values, previous = null) {
   const host = values.host === 'local' ? 'local' : values.hostName.trim()
   const name = values.name
@@ -282,10 +286,12 @@ async function store(values, previous = null) {
   if (host === 'local') {
     const written = await desktop.writeAgents(withLocalAgent(state.agents.document, name, entry))
     state.agents = written
+    notify(`Configuration ${name} saved.`, 'agents')
   } else {
     state.agentHosts = await desktop.saveAgentHosts(withHostAgent(state.agentHosts, host, name, entry))
     await pushOne(host, name, entry)
   }
+  return true
 }
 
 /** Where a machine's configurations are pushed: its SSH destination. */
