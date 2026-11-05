@@ -11,7 +11,7 @@
         <strong class="font-semibold text-gray-800">{{ paginationRange.end }}</strong>
         of
         <strong class="font-semibold text-gray-800">{{ totalReports }}</strong>
-        reports
+        {{ noun }}
       </span>
       <span class="text-gray-300">|</span>
       <div class="flex items-center gap-1.5">
@@ -21,9 +21,7 @@
           @change="$emit('update:pageSize', Number($event.target.value))"
           class="px-2 py-1 bg-gray-50 border-0 rounded-lg text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-[#833dff] cursor-pointer"
         >
-          <option :value="10">10 / page</option>
-          <option :value="25">25 / page</option>
-          <option :value="50">50 / page</option>
+          <option v-for="size in sizes" :key="size" :value="size">{{ size }} / page</option>
         </select>
       </div>
     </div>
@@ -87,7 +85,10 @@ defineProps({
   totalReports: { type: Number, required: true },
   pageSize: { type: Number, required: true },
   paginationRange: { type: Object, required: true },
-  visiblePages: { type: Array, required: true }
+  visiblePages: { type: Array, required: true },
+  /** What is counted: reports, by default. */
+  noun: { type: String, default: 'reports' },
+  sizes: { type: Array, default: () => [10, 25, 50] }
 })
 
 defineEmits(['change-page', 'update:pageSize'])

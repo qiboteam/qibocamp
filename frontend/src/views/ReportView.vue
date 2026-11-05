@@ -209,15 +209,44 @@
             title="Session comments"
             @update:notes="report.notes = $event"
           />
-          <div v-if="slideshow" class="no-print grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
-            <protocol-thumbnail
-              v-for="(proto, idx) in protocols"
-              :key="proto.id"
-              :proto="proto"
-              :index="idx"
-              @select="selectSlide(proto.id)"
+          <!-- The previews, a page at a time: only those of the page are drawn. -->
+          <div v-if="slideshow" class="no-print mt-6">
+            <div v-if="protocols.length > 1" class="flex items-center justify-end gap-1 mb-3 text-xs" role="group" aria-label="Order of the previews">
+              <button
+                v-for="choice in previewOrders"
+                :key="choice.value"
+                type="button"
+                :aria-pressed="previews.order.value === choice.value"
+                class="px-2.5 py-1 rounded-lg border transition cursor-pointer"
+                :class="previews.order.value === choice.value
+                  ? 'bg-purple-50 border-purple-200 text-[#833dff] font-semibold'
+                  : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'"
+                @click="previews.setOrder(choice.value)"
+              >{{ choice.label }}</button>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <protocol-thumbnail
+                v-for="item in previews.items.value"
+                :key="item.proto.id"
+                :proto="item.proto"
+                :index="item.index"
+                @select="selectSlide(item.proto.id)"
+              />
+              <p v-if="!protocols.length" class="text-xs text-gray-500">No protocols in this report yet.</p>
+            </div>
+            <pagination-bar
+              v-if="previews.total.value > PREVIEW_PAGE_SIZES[0]"
+              :current-page="previews.page.value"
+              :total-pages="previews.totalPages.value"
+              :total-reports="previews.total.value"
+              :page-size="previews.size.value"
+              :pagination-range="previews.range.value"
+              :visible-pages="previews.pages.value"
+              :sizes="PREVIEW_PAGE_SIZES"
+              noun="protocols"
+              @change-page="previews.goTo"
+              @update:page-size="previews.setSize"
             />
-            <p v-if="!protocols.length" class="text-xs text-gray-500">No protocols in this report yet.</p>
           </div>
         </div>
 
@@ -266,6 +295,8 @@ import ReportHeaderCard from '../components/report/ReportHeaderCard.vue'
 import NotesPanel from '../components/report/NotesPanel.vue'
 import ProtocolCard from '../components/report/ProtocolCard.vue'
 import ProtocolThumbnail from '../components/report/ProtocolThumbnail.vue'
+import PaginationBar from '../components/PaginationBar.vue'
+import { PREVIEW_PAGE_SIZES, usePreviewPages } from '../composables/usePreviewPages.js'
 import ProtocolDocsModal from '../components/modals/ProtocolDocsModal.vue'
 import { diagnostics } from '../composables/useDiagnostics.js'
 import PlotGenerationErrors from '../components/report/PlotGenerationErrors.vue'
@@ -334,6 +365,15 @@ const { slideshow, selectedId, slideIndex, showSlide, selectSlide, moveSlide, ha
   context: () => [reportId.value, state.activeServer?.id, state.activeServer?.url],
   container: reportPanel,
   navigate: routeToSlide
+})
+const previewOrders = [
+  { value: 'newest', label: 'Newest first' },
+  { value: 'oldest', label: 'Oldest first' }
+]
+const previews = usePreviewPages({
+  protocols: () => protocols.value,
+  selectedId: () => selectedId.value,
+  context: () => [reportId.value, state.activeServer?.id, state.activeServer?.url]
 })
 useMagneticFollow({
   protocols: () => protocols.value,

@@ -22,7 +22,11 @@ One slide at a time is the default: the report overview followed by one slide
 per protocol. The toggle in the report action bar names the mode it switches
 to — **Continuous** while the slideshow is on, which scrolls the whole report,
 and **Slideshow** while it is off. The overview includes clickable protocol thumbnails;
-plots, status, and the thumbnail list update in Live mode.
+plots, status, and the thumbnail list update in Live mode. The thumbnails come a
+page at a time, 12, 24 or 48 to a page, and only those of the page are drawn;
+**Newest first**, the default, or **Oldest first** orders them, and both choices
+are remembered. Coming back to the overview from a protocol shows the page its
+thumbnail is on.
 
 Use the previous/next buttons or **Left/Right** arrow keys to navigate. **Up**
 returns to the overview; **Down** jumps to the last protocol. In either view,
