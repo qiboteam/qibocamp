@@ -385,6 +385,26 @@ def normalize_targets(raw):
     return raw
 
 
+def results_target(results, target):
+    """The target as the results know it: a pair they only hold reversed, reversed.
+
+    STOPGAP (#100), to remove once Qibocal is fixed: `snz_optimize` keys its
+    results by the pair ordered by drive frequency, while its targets keep
+    the pair as written, and Qibocal's report then plots it without the fit.
+    A pair and its reverse may have distinct gates, so this is wrong in
+    general; it holds while each pair is calibrated in one direction only.
+    """
+    if results is None or not (isinstance(target, tuple) and len(target) == 2):
+        return target
+    try:
+        if target in results:
+            return target
+        reverse = target[::-1]
+        return reverse if reverse in results else target
+    except TypeError:
+        return target
+
+
 def target_label(target) -> str:
     """A target as a name reads: `2` for a qubit, `2-3` for a pair."""
     if isinstance(target, (list, tuple)):
@@ -472,7 +492,9 @@ def _generate_qibocal_protocols_native(
             if targets:
                 for target in targets:
                     try:
-                        figs, fit_rep = generate_figures_and_report(completed, target)
+                        figs, fit_rep = generate_figures_and_report(
+                            completed, results_target(completed.results, target)
+                        )
                         for fig in figs:
                             if hasattr(fig, "to_json"):
                                 fig_dict = json.loads(fig.to_json())

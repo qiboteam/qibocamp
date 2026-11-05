@@ -18,6 +18,28 @@ def test_targets_are_keyed_as_qibocal_keys_them():
     assert generator.target_label(2) == "2"
 
 
+class _PairResults:
+    """Results keyed as `snz_optimize` keys them: the pair by drive frequency."""
+
+    def __init__(self, *pairs):
+        self.pairs = set(pairs)
+
+    def __contains__(self, key):
+        return key in self.pairs
+
+
+def test_a_pair_the_results_hold_reversed_is_plotted_reversed():
+    # STOPGAP (#100): remove with `results_target` once Qibocal is fixed.
+    results = _PairResults(("D2", "D1"))
+    assert generator.results_target(results, ("D1", "D2")) == ("D2", "D1")
+    assert generator.results_target(results, ("D2", "D1")) == ("D2", "D1")
+    both = _PairResults(("D1", "D2"), ("D2", "D1"))
+    assert generator.results_target(both, ("D1", "D2")) == ("D1", "D2"), "a direction of its own is kept"
+    assert generator.results_target(results, ("D3", "D4")) == ("D3", "D4"), "a failed fit stays failed"
+    assert generator.results_target(None, ("D1", "D2")) == ("D1", "D2")
+    assert generator.results_target(results, "D1") == "D1"
+
+
 def test_a_folder_name_may_hold_pairs():
     assert scanner.parse_targets_text("3") == [3]
     assert scanner.parse_targets_text("0, 1") == [0, 1]
