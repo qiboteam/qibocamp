@@ -493,7 +493,8 @@ def _generate_qibocal_protocols_native(
                 for target in targets:
                     try:
                         figs, fit_rep = generate_figures_and_report(
-                            completed, results_target(completed.results, target)
+                            completed,
+                            results_target(getattr(completed, "results", None), target),
                         )
                         for fig in figs:
                             if hasattr(fig, "to_json"):
