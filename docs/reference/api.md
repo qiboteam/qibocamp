@@ -35,9 +35,11 @@ is not the one it speaks.
   "version": "0.1.0a1",
   "api_version": 1,
   "commit": "0123456789abcdef0123456789abcdef01234567",
-  "features": ["graphql", "uploads", "archives", "notes", "live", "parameters"]
+  "features": ["graphql", "uploads", "archives", "notes", "live", "parameters", "progressive"]
 }
 ```
+
+`progressive`: a report opens without generating anything, and the report socket generates its plots a batch at a time ([`WS /ws/reports/{report_id}`](#ws-wsreportsreport_id)).
 
 ### `GET /api/health`
 Returns system status, active server identifier, report count, and scanned root directory.
@@ -120,8 +122,8 @@ endpoints. A GET of the same address opens GraphiQL, the schema's own explorer.
 | --- | --- | --- |
 | `reports(where: ReportFilter, page: Int = 1, page_size: Int = 20)` | `GET /api/reports` with the same filters, paginated | viewer |
 | `stats(where: ReportFilter)` | `GET /api/reports/stats` | viewer |
-| `report(id: String!)` | `GET /api/reports/{id}`; its `protocols_detail` field is `GET /api/reports/{id}/protocols`, computed only when selected; `null` for a report that does not exist | viewer |
-| `protocol(report_id: String!, protocol_id: String!)` | one protocol of `GET /api/reports/{id}/protocols`, for its `html` and `figures` alone; `null` when either is not there | viewer |
+| `report(id: String!)` | `GET /api/reports/{id}`; its `protocols_detail` field lists every protocol, in execution order, without generating anything — those not generated yet have status `pending` and no outputs; `null` for a report that does not exist | viewer |
+| `protocol(report_id: String!, protocol_id: String!)` | one protocol, for its `html` and `figures` alone; status `pending`, without outputs, when not generated yet; `null` when either is not there | viewer |
 | `session` | `GET /api/auth/status` and `GET /api/auth/me`, in one: `auth_enabled`, and the `user` the token names, or `null` | anyone |
 | `health` | `GET /api/health` | anyone |
 
@@ -145,7 +147,10 @@ A report is opened in two steps by the dashboard: `report(id)` with
 without the megabytes they show — then `protocol(report_id, protocol_id) { html
 figures }` for each card as it nears the viewport, and for the rest in idle
 time. Pre-cached outputs are parsed once on the server and kept in memory while
-their files are unchanged, so the per-protocol requests cost a lookup.
+their files are unchanged, so the per-protocol requests cost a lookup. The
+protocols still `pending` are generated over the report socket,
+[`WS /ws/reports/{report_id}`](#ws-wsreportsreport_id), and never by a GraphQL
+request.
 
 Authorization is the same bearer token, in the same header. A field refused
 for want of a session comes back `null`, with an error whose
@@ -256,7 +261,9 @@ without that code. Partial figures and tables remain available when a routine
 fails for some targets.
 
 ### `POST /api/reports/{report_id}/regenerate`
-Purge the cached `report/` folder for this run and recompute figures on the fly using Qibocal evaluation routines.
+Purge the cached `report/` folder for this run and recompute figures on the fly using Qibocal evaluation routines, in one request. The dashboard regenerates over the report socket instead, protocol by protocol.
+
+`GET /api/reports/{report_id}/protocols` likewise answers every protocol with its outputs, generating those missing first, in one go.
 
 Generation uses a fresh process in the server's Python environment, with a
 five-minute timeout, so subsequent requests use a newly installed Qibocal version
@@ -440,7 +447,44 @@ Delete a single report directory from disk.
 ## 🔌 WebSockets
 
 ### `WS /ws/reports/{report_id}`
-Connect to receive real-time execution events, streaming status changes, and progress updates.
+A report's metadata, then its plots as they are generated: the protocols not
+generated yet, a batch of six at a time, those the page has on screen first.
+Every page with the report open shares one generation, which stops after the
+batch under way once none is left; each batch is cached as it ends, so the next
+page goes on from there. Pass the access token in the `token` query parameter
+when authentication is enabled.
+
+The server sends:
+
+```json
+{"type": "metadata", "report": {"id": "run", "history": ["rabi-0", "t1-0"]}}
+{"type": "queued", "ids": ["t1-0"], "regenerating": [], "generating": ["t1-0"]}
+{"type": "protocol", "protocol": {"id": "t1-0", "name": "T1", "status": "success", "html": "...", "figures": []}}
+{"type": "done"}
+{"type": "error", "message": "Regenerating plots needs editor access."}
+```
+
+`queued` says what is left — `generating`, the batch under way, included — and
+which of those are regenerated, whose previous outputs stand until replaced;
+it comes when a page connects and with every batch. A `protocol` comes as soon
+as its batch ends, notes attached. A protocol that fails is cached as failed
+when it had no outputs; one that had keeps them, and its `protocol` message
+carries them with status `error` and why. When Qibocal produces nothing — not
+installed, say — every protocol of the batch is answered with that error,
+`error_code` included, and nothing is cached, so that it is tried again.
+
+The page sends:
+
+```json
+{"type": "visible", "ids": ["t1-0", "ramsey-0"]}
+{"type": "regenerate", "ids": ["t1-0"]}
+{"type": "regenerate", "ids": null}
+"ping"
+```
+
+`visible`, the placeholders on screen, generated first; `regenerate`, some
+protocols again or, with `null`, all of them, which requires editor or
+administrator access; `ping`, answered `pong`.
 
 ### `WS /ws/live/reports/{report_id}`
 Subscribe to incremental report updates. Requires editor or administrator access

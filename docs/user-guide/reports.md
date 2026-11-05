@@ -166,13 +166,28 @@ From the command line, `qibocamp report upload PATH SERVER` sends a report folde
 
 A server without authentication accepts uploads from anyone who reaches it. One with authentication accepts them from its administrators, and from whom **Uploads**, in Server Administration, adds: editors, every signed-in user, or chosen individuals. A report is checked before anything is written — one folder holding a `meta.json`, no absolute path, no `..`, no link — and may not exceed 4 GiB once unpacked, or `QIBOCAMP_UPLOAD_LIMIT` bytes.
 
-## 🔄 On-The-Fly Regeneration
+## 🔄 On-The-Fly Generation and Regeneration
 
-If a calibration routine needs to be re-plotted with updated fitting criteria or if cache invalidation is required:
+A report opens at once, every protocol named, whether its plots exist yet or
+not. Those not generated yet show *Generating plots…*, and the server generates
+them a batch at a time — the ones on screen first — each card filling as soon
+as its batch ends. The page stays usable meanwhile. What is generated is kept:
+closing the page stops the generation after the batch under way, and opening
+the report again goes on from there. Two pages on the same report share one
+generation, and see the same cards fill.
 
-- Click the **Regenerate** button in the report header card.
-- The server purges the cached `report/` folder and re-runs evaluation routines.
-- Updated plots and parameters are automatically refreshed in your browser without requiring a server restart.
+A protocol that cannot be generated says why in its own card; the others carry
+on.
+
+To plot again — after installing another Qibocal version, say:
+
+- **Regenerate**, in the sidebar, regenerates every protocol; **Regenerate**, on
+  a protocol's card, that protocol alone. Both need editor access.
+- A protocol being regenerated is marked *regenerating*, and keeps its previous
+  plots until the new ones replace them, so the report stays readable
+  throughout.
+- A protocol whose regeneration fails keeps its previous plots, marked with the
+  error.
 
 ### Live updates during calibration
 

@@ -741,16 +741,157 @@ def forget_cached_protocols(report_dir: Path) -> None:
     _OUTPUT_CACHE.pop(str(report_dir.resolve()), None)
 
 
+# --- The protocols as far as they are generated -----------------------------
+#
+# A report opens with every protocol it ran, at once: those already generated
+# with their outputs, the others as placeholders, `pending`, which the report
+# socket fills batch by batch (`reports/progressive.py`). Nothing here imports
+# Qibocal or generates anything.
+
+PENDING = "pending"
+"""The status of a protocol whose outputs are not generated yet."""
+
+
+def _timing(timing_map: dict[str, str], task_id: str) -> str:
+    return (
+        timing_map.get(task_id)
+        or timing_map.get(task_id.replace("-", "_"))
+        or timing_map.get(task_id.replace("_", "-"))
+        or timing_map.get(task_id.rsplit("-", 1)[0])
+        or "N/A"
+    )
+
+
+def placeholder(report_dir: Path, task_id: str, timing_map: dict[str, str] | None = None) -> ProtocolDetail:
+    """A protocol not generated yet: named, timed, without outputs."""
+    timing_map = _extract_protocol_timing_map(report_dir) if timing_map is None else timing_map
+    return ProtocolDetail(
+        id=task_id,
+        name=task_id.replace("_", " ").title(),
+        category="calibration",
+        execution_time=_timing(timing_map, task_id),
+        status=PENDING,
+    )
+
+
+def missing_protocols(report_dir: Path) -> list[str]:
+    """The tasks of a report whose outputs are not cached, in execution order."""
+    cached = {p.id for p in load_cached_protocols(report_dir)} if has_cached_report(report_dir) else set()
+    return [task_id for task_id in get_execution_order(report_dir) if task_id not in cached]
+
+
+def report_overview(report_dir: Path) -> list[ProtocolDetail]:
+    """Every protocol of a report, in execution order: cached, or a placeholder."""
+    cached = cached_protocols(report_dir) if has_cached_report(report_dir) else []
+    known = {p.id for p in cached}
+    timing_map = _extract_protocol_timing_map(report_dir)
+    missing = [
+        placeholder(report_dir, task_id, timing_map)
+        for task_id in get_execution_order(report_dir)
+        if task_id not in known
+    ]
+    return sort_protocols_by_execution_order(
+        [*cached, *attach_protocol_notes(report_dir, missing)], report_dir
+    )
+
+
+def merge_generated(report_dir: Path, generated: list[ProtocolDetail]) -> list[ProtocolDetail]:
+    """Publish a batch of generated protocols into the cache, as each batch ends.
+
+    A success replaces what was there, and its input fingerprint is recorded.
+    A failure is cached only where nothing was: a protocol that had outputs
+    keeps them, and the failure is returned, marked, for the page to show.
+    Returns the protocols as the page should show them, notes attached.
+    """
+    with report_generation_lock(report_dir):
+        try:
+            inputs = protocol_inputs(report_dir)
+        except (OSError, ValueError, TypeError) as error:
+            log_warning(f"Could not fingerprint report inputs: {error}")
+            inputs = {}
+        cached = {p.id: p for p in load_cached_protocols(report_dir)} if has_cached_report(report_dir) else {}
+        known_path = report_dir / "report" / ".live-inputs.json"
+        try:
+            known = json.loads(known_path.read_text(encoding="utf-8")) if known_path.is_file() else {}
+        except (OSError, ValueError):
+            known = {}
+        shown = []
+        for protocol in generated:
+            previous = cached.get(protocol.id)
+            if protocol.status == "success" or previous is None:
+                cached[protocol.id] = protocol
+                if protocol.status == "success" and protocol.id in inputs:
+                    known[protocol.id] = inputs[protocol.id]
+                shown.append(protocol)
+            else:
+                shown.append(previous.model_copy(update={
+                    "status": "error",
+                    "error": protocol.error or "Plot generation failed",
+                    "error_code": protocol.error_code,
+                }))
+        write_protocol_cache(
+            report_dir, sort_protocols_by_execution_order(list(cached.values()), report_dir)
+        )
+        write_input_cache(report_dir, known)
+        forget_cached_protocols(report_dir)
+        return attach_protocol_notes(report_dir, shown)
+
+
+def generate_protocols(report_dir: Path, task_ids: list[str]) -> list[ProtocolDetail]:
+    """Generate some tasks of a report, in one worker, as the page shows them.
+
+    When Qibocal produces nothing at all — not installed, failed to start —
+    every task is answered with that error, uncached, so that it is tried
+    again once Qibocal is there.
+    """
+    protocols, error = _generate_qibocal_protocols(report_dir, task_ids)
+    if protocols is None:
+        timing_map = _extract_protocol_timing_map(report_dir)
+        return attach_protocol_notes(report_dir, [
+            placeholder(report_dir, task_id, timing_map).model_copy(update={
+                "status": "error",
+                "error": str(error or "Qibocal did not produce protocol outputs for this report."),
+                "error_code": getattr(error, "error_code", None),
+            })
+            for task_id in task_ids
+        ])
+    found = {p.id for p in protocols}
+    timing_map = _extract_protocol_timing_map(report_dir)
+    for protocol in protocols:
+        if not protocol.execution_time or protocol.execution_time == "N/A":
+            protocol.execution_time = _timing(timing_map, protocol.id)
+    lost = [
+        placeholder(report_dir, task_id, timing_map).model_copy(update={
+            "status": "error", "error": f"Qibocal returned no outputs for routine '{task_id}'.",
+        })
+        for task_id in task_ids if task_id not in found
+    ]
+    return merge_generated(report_dir, [*protocols, *lost])
+
+
 def get_report_protocols(
     report_dir: Path, progress_callback: Callable[[int, int, str], None] | None = None
 ) -> list[ProtocolDetail]:
-    """Retrieve report protocols: pre-cached if present, or generate on-the-fly."""
+    """Every protocol with its outputs, generating what is missing first, in one go.
+
+    For callers that want everything at once (`/protocols`); the dashboard
+    opens the overview instead and lets the report socket generate.
+    """
     with report_generation_lock(report_dir):
-        if has_cached_report(report_dir):
-            protocols = cached_protocols(report_dir)
-        else:
+        if not has_cached_report(report_dir):
             protocols = generate_report_on_the_fly(report_dir, progress_callback=progress_callback)
-        return sort_protocols_by_execution_order(protocols, report_dir)
+            return sort_protocols_by_execution_order(protocols, report_dir)
+        missing = missing_protocols(report_dir)
+        if not missing:
+            return sort_protocols_by_execution_order(cached_protocols(report_dir), report_dir)
+        if progress_callback:
+            progress_callback(1, 1, ", ".join(missing))
+        # Failures Qibocal-wide are not cached: they stand in for the placeholders.
+        answered = {p.id: p for p in generate_protocols(report_dir, missing)}
+        return [
+            answered.get(p.id, p) if p.status == PENDING else p
+            for p in report_overview(report_dir)
+        ]
 
 
 def regenerate_report(

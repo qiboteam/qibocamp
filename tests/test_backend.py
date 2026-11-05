@@ -283,7 +283,7 @@ def test_api_endpoints():
         msg1 = ws.receive_json()
         assert msg1["type"] == "metadata"
         msg2 = ws.receive_json()
-        assert msg2["type"] in ("status", "ready")
+        assert msg2["type"] == "queued"
 
     # Download full report zip
     r_full = client.get(f"/api/reports/{first_id}/download/full")

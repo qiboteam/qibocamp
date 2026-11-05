@@ -5,10 +5,10 @@
   >
     <div class="flex items-center justify-between gap-2">
       <span class="text-xs font-semibold text-gray-800 truncate">{{ index + 1 }}. {{ proto.name }}</span>
-      <span class="text-[10px] font-mono" :class="proto.status === 'error' ? 'text-amber-700' : 'text-emerald-700'">{{ proto.status }}</span>
+      <span class="text-[10px] font-mono" :class="proto.regenerating ? 'text-[#833dff]' : proto.outputs === 'generating' ? 'text-gray-400' : proto.status === 'error' ? 'text-amber-700' : 'text-emerald-700'">{{ proto.regenerating ? 'regenerating' : proto.outputs === 'generating' ? 'generating' : proto.status }}</span>
     </div>
     <div class="pointer-events-none" aria-hidden="true">
-      <div v-if="['pending', 'loading'].includes(proto.outputs)" class="h-40 flex items-center justify-center text-xs text-gray-400">Fetching…</div>
+      <div v-if="['pending', 'loading', 'generating'].includes(proto.outputs)" class="h-40 flex items-center justify-center text-xs text-gray-400">{{ proto.outputs === 'generating' ? 'Generating…' : 'Fetching…' }}</div>
       <plotly-viewer v-else-if="proto.figures?.length" :figure="proto.figures[0]" thumbnail />
       <div v-else-if="proto.html" class="h-40 overflow-hidden my-2" inert>
         <div class="thumbnail-table" v-html="safeHtml"></div>
@@ -47,7 +47,7 @@ const safeHtml = computed(() => sanitizeHtml(props.proto?.html))
 const root = ref(null)
 const requestOutputs = inject('requestProtocolOutputs', null)
 useNearViewport(root, () => {
-  if (props.proto?.outputs === 'pending' && requestOutputs) requestOutputs(props.proto.id)
+  if (['pending', 'generating'].includes(props.proto?.outputs) && requestOutputs) requestOutputs(props.proto.id)
 })
 </script>
 

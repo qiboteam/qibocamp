@@ -15,7 +15,7 @@ from qibocamp import __version__
 API_VERSION = 1
 
 # What a client may rely on, beyond the API version, by name.
-FEATURES = ("graphql", "uploads", "archives", "notes", "live", "parameters")
+FEATURES = ("graphql", "uploads", "archives", "notes", "live", "parameters", "progressive")
 
 # A GitHub archive of a commit, as the launcher installs it.
 ARCHIVE_COMMIT = re.compile(r"/archive/([0-9a-f]{40})\.(?:tar\.gz|zip)$")

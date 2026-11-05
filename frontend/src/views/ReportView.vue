@@ -338,11 +338,14 @@ const {
   handleRegenerate,
   handleSaveAuthor,
   handleRemoveTag,
-  requestProtocolOutputs
+  requestProtocolOutputs,
+  regenerateProtocol
 } = useReportDetail(reportId)
 
 // The cards and thumbnails ask for their outputs as they come near.
 provide('requestProtocolOutputs', requestProtocolOutputs)
+// Editors regenerate one protocol from its card; viewers see no button.
+provide('regenerateProtocol', computed(() => (canEdit.value && !regenerating.value && !live.value ? regenerateProtocol : null)))
 
 const reportPanel = ref(null)
 const protocolList = ref(null)

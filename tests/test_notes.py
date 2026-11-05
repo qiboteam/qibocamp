@@ -252,11 +252,15 @@ def test_websocket_serializes_histories_and_legacy_outputs(report, with_notes):
             metadata = socket.receive_json()
             assert metadata["type"] == "metadata"
             assert len(metadata["report"]["notes"]) == int(with_notes)
-            assert socket.receive_json()["type"] == "status"
-            ready = socket.receive_json()
-            assert ready["type"] == "ready"
-            assert len(ready["protocols"][0]["notes"]) == int(with_notes)
-            assert ready["protocols"][1]["notes"] == []
+            queued = socket.receive_json()
+            assert queued["type"] == "queued" and queued["ids"] == [], "all cached: nothing to generate"
+            assert socket.receive_json()["type"] == "done"
+            socket.send_json({"type": "regenerate", "ids": ["rabi-0"]})
+            assert socket.receive_json()["regenerating"] == ["rabi-0"]
+            while (message := socket.receive_json())["type"] != "protocol":
+                pass
+            assert message["protocol"]["id"] == "rabi-0"
+            assert len(message["protocol"]["notes"]) == int(with_notes), "a generated protocol carries its notes"
 
 
 def test_generation_and_regeneration_keep_notes_outside_plot_cache(report, monkeypatch):

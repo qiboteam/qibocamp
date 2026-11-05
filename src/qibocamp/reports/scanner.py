@@ -14,6 +14,7 @@ from qibocamp.reports.generator import (
     get_execution_order,
     has_cached_report,
     cached_protocols,
+    report_overview,
     load_cached_protocols,
     sort_protocols_by_execution_order,
 )
@@ -740,8 +741,9 @@ def get_report_detail(
     # Protocol summaries: read from cache if available, otherwise summarize from
     # metadata in execution order
     if has_cached_report(target_dir):
-        # Counted from the outputs, which are kept in memory once read.
-        protocols = cached_protocols(target_dir)
+        # Counted from the outputs, which are kept in memory once read; the
+        # protocols not generated yet are there too, pending.
+        protocols = report_overview(target_dir)
         proto_summaries = [
             ProtocolSummary(
                 id=p.id,

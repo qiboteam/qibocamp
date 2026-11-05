@@ -117,6 +117,10 @@ const OUTPUTS_QUERY = `
     protocol(report_id: $report_id, protocol_id: $protocol_id) { html figures error error_code }
   }
 `
+/** The status of a protocol whose plots are not generated yet. */
+const PENDING = 'pending'
+/** How many placeholders on screen the server is told about: generated first. */
+const GENERATION_VISIBLE = 12
 /** How many protocols' outputs are in flight at once. */
 const OUTPUTS_CONCURRENCY = 2
 
@@ -338,6 +342,10 @@ export function useReportDetail(reportId) {
   /** A card came near: its outputs go to the head of the line. */
   function requestProtocolOutputs(id) {
     const protocol = protocols.value.find(entry => entry.id === id)
+    if (protocol?.outputs === 'generating') {
+      showGenerating(id)
+      return
+    }
     if (!protocol || protocol.outputs !== 'pending') return
     outputsQueue.later = outputsQueue.later.filter(entry => entry !== id)
     if (!outputsQueue.near.includes(id)) outputsQueue.near.push(id)
@@ -351,11 +359,12 @@ export function useReportDetail(reportId) {
   }
 
   /**
-   * The report over GraphQL, its protocols named but not yet fetched.
-   * Answers 'ready' when the outputs can be fetched one by one — a report
-   * with pre-cached outputs — and 'generate' when they have to be generated
-   * first, which the WebSocket does with progress. A missing report is
-   * thrown.
+   * The report over GraphQL, every protocol named, at once. Those generated
+   * already fetch their outputs card by card; those not yet — status
+   * `pending` — are placeholders the generation socket fills as their batch
+   * ends. Answers 'ready' then; 'generate' for a server older than that,
+   * which names no pending protocol and generates a whole report over its
+   * socket before answering. A missing report is thrown.
    */
   async function loadViaGraphQL(id) {
     const data = await apiGraphQL(REPORT_QUERY, { id })
@@ -367,17 +376,174 @@ export function useReportDetail(reportId) {
     report.value = metadata
     state.currentReportId = metadata.id
     addToHistory(metadata)
-    if (!metadata.has_cached_report) return 'generate'
+    const pending = (named || []).filter(protocol => protocol.status === PENDING)
+    // A server that names pending protocols generates them protocol by protocol.
+    progressive = pending.length ? true : null
+    if (!metadata.has_cached_report && !pending.length) {
+      progressive = false
+      return 'generate'
+    }
     outputsContext += 1
     outputsQueue.near = []
     outputsQueue.later = []
     outputsQueue.server = state.activeServer
     outputsQueue.reportId = id
     protocols.value = sortProtocolsByExecutionOrder(
-      (named || []).map(protocol => ({ ...protocol, html: '', figures: [], outputs: 'pending' })),
+      (named || []).map(protocol => ({
+        ...protocol,
+        html: '',
+        figures: [],
+        outputs: protocol.status === PENDING ? 'generating' : 'pending'
+      })),
       metadata
     )
+    if (pending.length) openGeneration(id)
     return 'ready'
+  }
+
+  // --- The plots not generated yet, as their batch ends ----------------------
+
+  /** Whether the server generates protocol by protocol: null until known. */
+  let progressive = null
+
+  /** The socket of the report's generation, shared with every page that has it open. */
+  const generation = { socket: null, reportId: null, server: null, visible: [], timer: null, waiting: [], modern: null, decided: [] }
+
+  function closeGeneration() {
+    clearTimeout(generation.timer)
+    if (generation.socket) {
+      try { generation.socket.close() } catch {}
+    }
+    for (const resolve of generation.decided.splice(0)) resolve(false)
+    Object.assign(generation, { socket: null, reportId: null, server: null, visible: [], timer: null, waiting: [], modern: null, decided: [] })
+  }
+
+  /**
+   * Whether the server generates protocol by protocol: it answers `queued`
+   * first, where an older one says `status` and sends the report whole.
+   */
+  function generationSupported(id) {
+    if (progressive === false) return Promise.resolve(false)
+    if (!openGeneration(id)) return Promise.resolve(false)
+    if (progressive === true) return Promise.resolve(true)
+    if (generation.modern !== null) return Promise.resolve(generation.modern)
+    return new Promise(resolve => {
+      generation.decided.push(resolve)
+      setTimeout(() => resolve(false), 5000)
+    })
+  }
+
+  function decideGeneration(modern) {
+    if (generation.modern !== null) return
+    generation.modern = modern
+    for (const resolve of generation.decided.splice(0)) resolve(modern)
+  }
+
+  function sendGeneration(message) {
+    const socket = generation.socket
+    if (socket?.readyState === 1) socket.send(JSON.stringify(message))
+    else generation.waiting.push(message)
+  }
+
+  /** Open the report's generation socket, once: what it sends fills the placeholders. */
+  function openGeneration(id) {
+    if (generation.socket && generation.reportId === id) return generation.socket
+    closeGeneration()
+    let socket
+    try {
+      socket = new WebSocket(getActiveWsUrl(`/ws/reports/${encodeURIComponent(id)}`))
+    } catch (err) {
+      console.warn('The plots cannot be generated without the report socket', err)
+      return null
+    }
+    const server = state.activeServer
+    Object.assign(generation, { socket, reportId: id, server })
+    const current = () => generation.socket === socket
+    socket.onopen = () => {
+      if (!current()) return
+      for (const message of generation.waiting.splice(0)) socket.send(JSON.stringify(message))
+      if (generation.visible.length) socket.send(JSON.stringify({ type: 'visible', ids: generation.visible }))
+    }
+    socket.onmessage = event => {
+      if (!current()) return
+      let message
+      try { message = JSON.parse(event.data) } catch { return }
+      onGeneration(message)
+    }
+    socket.onclose = () => {
+      if (!current()) return
+      generation.socket = null
+      decideGeneration(false)
+      const left = protocols.value.filter(protocol => protocol.outputs === 'generating' || protocol.regenerating)
+      if (left.length) showBanner('Plot generation stopped before the end: reload the report to go on.', 0, true)
+      for (const protocol of left) setProtocol(protocol.id, { regenerating: false })
+      if (regenerating.value) regenerating.value = false
+    }
+    return socket
+  }
+
+  function onGeneration(message) {
+    if (message.type === 'metadata') {
+      report.value = { ...report.value, ...message.report }
+    } else if (['status', 'progress'].includes(message.type)) {
+      decideGeneration(false)
+    } else if (message.type === 'queued') {
+      decideGeneration(true)
+      for (const id of message.regenerating || []) {
+        const protocol = protocols.value.find(entry => entry.id === id)
+        if (protocol && protocol.outputs !== 'generating') setProtocol(id, { regenerating: true })
+      }
+    } else if (message.type === 'protocol') {
+      const protocol = message.protocol
+      setProtocol(protocol.id, { ...protocol, figures: protocol.figures || [], outputs: 'ready', regenerating: false })
+      if (report.value && protocol.status === 'success') report.value.has_cached_report = true
+    } else if (message.type === 'done') {
+      if (regenerating.value) {
+        regenerating.value = false
+        const errors = getPlotGenerationErrors(protocols.value)
+        if (errors.length) showBanner(`Some plots could not be generated: ${errors.join(' ')}`, 0, true)
+        else showBanner('Report plots regenerated successfully!', 3500)
+      }
+    } else if (message.type === 'ready') {
+      // A server that generates a report whole, then sends it.
+      protocols.value = sortProtocolsByExecutionOrder(
+        message.protocols.map(protocol => ({ ...protocol, outputs: 'ready' })),
+        report.value
+      )
+      if (regenerating.value) regenerating.value = false
+    } else if (message.type === 'error') {
+      showBanner(message.message || 'Plot generation failed.', 0, true)
+      if (regenerating.value) regenerating.value = false
+    }
+  }
+
+  /** A placeholder came near: the server generates it first. */
+  function showGenerating(id) {
+    generation.visible = [id, ...generation.visible.filter(entry => entry !== id)].slice(0, GENERATION_VISIBLE)
+    clearTimeout(generation.timer)
+    generation.timer = setTimeout(() => sendGeneration({ type: 'visible', ids: generation.visible }), 150)
+  }
+
+  /**
+   * Generate protocols again — all of them without `ids` — keeping their
+   * plots, marked, until the new ones arrive. False when the report socket
+   * cannot be opened, for the caller to regenerate another way.
+   */
+  async function regenerateProtocols(ids = null) {
+    const id = typeof reportId === 'function' ? reportId() : reportId.value
+    if (!id || !(await generationSupported(id))) return false
+    for (const protocol of protocols.value) {
+      if (ids === null || ids.includes(protocol.id)) setProtocol(protocol.id, { regenerating: true })
+    }
+    sendGeneration({ type: 'regenerate', ids })
+    return true
+  }
+
+  async function regenerateProtocol(protocolId) {
+    if (!canEdit.value || loading.value) return
+    if (!(await regenerateProtocols([protocolId]))) {
+      showBanner('This server regenerates whole reports only: use Regenerate in the sidebar.', 6000, true)
+    }
   }
 
   /** The protocols generated in one request, where the WebSocket could not be opened. */
@@ -411,6 +577,7 @@ export function useReportDetail(reportId) {
       try { activeWs.close() } catch {}
       activeWs = null
     }
+    closeGeneration()
     outputsContext += 1
 
     // One request names the report and its protocols; a pre-cached report
@@ -448,6 +615,8 @@ export function useReportDetail(reportId) {
     const isCurrent = () => server === state.activeServer && id === (typeof reportId === 'function' ? reportId() : reportId.value)
     regenerating.value = true
     statusBanner.value = ''
+    // Protocol by protocol, the previous plots shown until replaced.
+    if (await regenerateProtocols(null)) return
     try {
       const encodedId = encodeURIComponent(id)
       const res = await apiFetch(`/api/reports/${encodedId}/regenerate`, { method: 'POST' }, server)
@@ -525,6 +694,7 @@ export function useReportDetail(reportId) {
 
   onUnmounted(() => {
     liveSubscription.stop()
+    closeGeneration()
     if (activeWs) {
       try { activeWs.close() } catch {}
       activeWs = null
@@ -547,6 +717,7 @@ export function useReportDetail(reportId) {
     toggleLive,
     loadReportData,
     handleRegenerate,
+    regenerateProtocol,
     handleSaveAuthor,
     handleRemoveTag
   }

@@ -32,10 +32,24 @@
         <span class="text-xs font-mono text-gray-400">⏱️ {{ proto.execution_time || 'N/A' }}</span>
         <span
           class="px-2 py-0.5 rounded text-xs font-semibold"
-          :class="proto.status === 'error' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'"
+          :class="badge.class"
+          :title="proto.regenerating ? 'Being generated again: the plots below are the previous ones until the new ones arrive.' : ''"
         >
-          {{ proto.status }}
+          {{ badge.label }}
         </span>
+
+        <!-- Generate this protocol's plots again: its previous ones stay until the new ones arrive. -->
+        <button
+          v-if="regenerateProtocol"
+          type="button"
+          class="no-print px-2 py-1 rounded-lg bg-white hover:bg-purple-50 text-gray-700 hover:text-[#833dff] border border-gray-200 hover:border-purple-300 shadow-2xs flex items-center gap-1.5 transition cursor-pointer text-xs font-medium shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+          :disabled="busy"
+          :title="busy ? 'Its plots are being generated' : `Regenerate the plots of ${proto.name}`"
+          @click="regenerateProtocol(proto.id)"
+        >
+          <RefreshCw class="w-3.5 h-3.5" :class="{ 'animate-spin': busy }" aria-hidden="true" />
+          <span class="text-[11px] font-semibold">Regenerate</span>
+        </button>
 
         <!-- Protocol Docs Button -->
         <a
@@ -93,7 +107,7 @@
 
     <!-- Outputs not fetched yet: they come as the card nears the viewport. -->
     <div v-if="pendingOutputs" class="my-4 rounded-xl border border-dashed border-gray-200 min-h-[120px] flex items-center justify-center text-xs text-gray-400">
-      {{ proto.outputs === 'failed' ? 'The plots could not be fetched.' : 'Fetching plots…' }}
+      {{ proto.outputs === 'failed' ? 'The plots could not be fetched.' : proto.outputs === 'generating' ? 'Generating plots…' : 'Fetching plots…' }}
     </div>
 
     <!-- Injected Plotly Figures -->
@@ -152,7 +166,8 @@
 </template>
 
 <script setup>
-import { computed, inject, reactive, ref, watch } from 'vue'
+import { computed, inject, reactive, ref, unref, watch } from 'vue'
+import { RefreshCw } from 'lucide-vue-next'
 import { state, apiFetch } from '../../store.js'
 import { useNearViewport } from '../../composables/useNearViewport.js'
 import { getProtocolDocUrl, hasSpecificDoc } from '../../utils/protocolDocs.js'
@@ -180,9 +195,23 @@ const props = defineProps({
  */
 const root = ref(null)
 const requestOutputs = inject('requestProtocolOutputs', null)
-const pendingOutputs = computed(() => ['pending', 'loading', 'failed'].includes(props.proto?.outputs))
+const pendingOutputs = computed(() => ['pending', 'loading', 'failed', 'generating'].includes(props.proto?.outputs))
 useNearViewport(root, () => {
-  if (props.proto?.outputs === 'pending' && requestOutputs) requestOutputs(props.proto.id)
+  // Fetched when cached, or generated first when not: the page knows which.
+  if (['pending', 'generating'].includes(props.proto?.outputs) && requestOutputs) requestOutputs(props.proto.id)
+})
+
+/** Regenerating, offered to editors by the report page; absent otherwise. */
+const offered = inject('regenerateProtocol', null)
+const regenerateProtocol = computed(() => unref(offered))
+const busy = computed(() => Boolean(props.proto?.regenerating) || props.proto?.outputs === 'generating')
+
+/** What the protocol is: being generated, again or for the first time, or its status. */
+const badge = computed(() => {
+  if (props.proto?.regenerating) return { label: 'regenerating', class: 'bg-purple-100 text-[#3b107e]' }
+  if (props.proto?.outputs === 'generating') return { label: 'generating', class: 'bg-gray-100 text-gray-600' }
+  if (props.proto?.status === 'error') return { label: props.proto.status, class: 'bg-amber-100 text-amber-800' }
+  return { label: props.proto?.status, class: 'bg-emerald-100 text-emerald-800' }
 })
 
 /** The protocol's HTML, as a report from any server may carry it: cleaned. */

@@ -32,7 +32,61 @@ GITHUB_REPO_URL = "https://api.github.com/repos/qiboteam/qibocal"
 INSTALL_TIMEOUT = 600
 GENERATION_TIMEOUT = 300
 _INSTALL_LOCK = threading.Lock()
-_ENVIRONMENT_LOCK = threading.Lock()
+class _SharedLock:
+    """Shared by plot generations, which run side by side, and exclusive for installing.
+
+    An installation waiting keeps new generations out, so that a busy server
+    still gets its new Qibocal once the generations under way end.
+    """
+
+    def __init__(self):
+        self._condition = threading.Condition()
+        self._shared = 0
+        self._exclusive = False
+        self._waiting = 0
+
+    def acquire_shared(self, timeout: float) -> bool:
+        with self._condition:
+            return self._condition.wait_for(
+                lambda: not self._exclusive and not self._waiting, timeout
+            ) and self._take_shared()
+
+    def _take_shared(self) -> bool:
+        self._shared += 1
+        return True
+
+    def release_shared(self) -> None:
+        with self._condition:
+            self._shared -= 1
+            self._condition.notify_all()
+
+    def acquire(self, blocking: bool = True, timeout: float = -1) -> bool:
+        """Exclusive, as `threading.Lock.acquire`."""
+        with self._condition:
+            self._waiting += 1
+            try:
+                acquired = self._condition.wait_for(
+                    lambda: not self._exclusive and not self._shared,
+                    0 if not blocking else None if timeout is None or timeout < 0 else timeout,
+                )
+                if acquired:
+                    self._exclusive = True
+                return acquired
+            finally:
+                self._waiting -= 1
+                self._condition.notify_all()
+
+    def release(self) -> None:
+        with self._condition:
+            self._exclusive = False
+            self._condition.notify_all()
+
+    def locked(self) -> bool:
+        with self._condition:
+            return self._exclusive or self._shared > 0
+
+
+_ENVIRONMENT_LOCK = _SharedLock()
 _INSTALL_STATE_LOCK = threading.Lock()
 _INSTALL_CANCEL: threading.Event | None = None
 INSTALL_OUTPUT_CHUNK_BYTES = 4096
@@ -49,14 +103,17 @@ class EnvironmentOperationError(Exception):
 @contextmanager
 def generation_environment():
     """Keep package files stable for the lifetime of a generation subprocess."""
-    if not _ENVIRONMENT_LOCK.acquire(timeout=INSTALL_TIMEOUT + GENERATION_TIMEOUT + 30):
+    lock = _ENVIRONMENT_LOCK
+    shared = hasattr(lock, "acquire_shared")
+    timeout = INSTALL_TIMEOUT + GENERATION_TIMEOUT + 30
+    if not (lock.acquire_shared(timeout) if shared else lock.acquire(timeout=timeout)):
         raise EnvironmentOperationError(
             409, "The Qibocal environment is busy; try plot generation again."
         )
     try:
         yield
     finally:
-        _ENVIRONMENT_LOCK.release()
+        lock.release_shared() if shared else lock.release()
 
 
 def _read_status(expected_git_commit: str | None = None) -> QibocalStatus:

@@ -1533,14 +1533,17 @@ async def report_websocket_endpoint(websocket: WebSocket, report_id: str):
     if not socket_from_allowed_page(websocket):
         await websocket.close(code=1008)
         return
+    can_edit = True
     if auth.is_auth_enabled():
         token = websocket.query_params.get("token")
         payload = auth.decode_access_token(token) if token else None
         # A deleted user's token still decodes: the user must still be there.
-        if not payload or not auth.get_user_by_id(payload.get("sub")):
+        user = auth.get_user_by_id(payload.get("sub")) if payload else None
+        if not user:
             await websocket.close(code=1008)
             return
-    await handle_report_websocket(websocket, report_id, REPORT_ROOT_DIR)
+        can_edit = user["role"] in (UserRole.EDITOR.value, UserRole.ADMIN.value)
+    await handle_report_websocket(websocket, report_id, REPORT_ROOT_DIR, can_edit)
 
 
 # --- Protocol Outputs & Regeneration ---

@@ -28,7 +28,7 @@ from strawberry.types import Info
 
 from qibocamp import auth
 from qibocamp.auth import UserRole
-from qibocamp.reports.generator import get_report_protocols
+from qibocamp.reports.generator import report_overview
 from qibocamp.models import (
     FilterStats,
     ProtocolDetail,
@@ -256,13 +256,15 @@ class ReportFull(Report):
 
     @strawberry.field(
         description=(
-            "The protocols as `/api/reports/{id}/protocols` lists them. Select `html` and "
-            "`figures` here to have every output at once, or leave them out and ask "
-            "`protocol` for one protocol's outputs at a time, as the cards come into view."
+            "Every protocol of the report, in execution order, without generating anything: "
+            "those not generated yet have status `pending` and no outputs, and the report "
+            "socket generates them. Select `html` and `figures` here to have every cached "
+            "output at once, or leave them out and ask `protocol` for one protocol's "
+            "outputs at a time, as the cards come into view."
         )
     )
     def protocols_detail(self) -> list[Protocol]:
-        return [Protocol.of(p) for p in get_report_protocols(self._directory)]
+        return [Protocol.of(p) for p in report_overview(self._directory)]
 
     @staticmethod
     def of(detail: ReportDetail, directory: Path) -> ReportFull:
@@ -378,7 +380,8 @@ class Query:
     @strawberry.field(
         description=(
             "One protocol of a report, for its outputs: the figures and the HTML of the "
-            "card that just came into view. Null when the report, or the protocol, is not there."
+            "card that just came into view; `pending`, without outputs, when not generated "
+            "yet. Null when the report, or the protocol, is not there."
         )
     )
     def protocol(self, info: Info, report_id: str, protocol_id: str) -> Protocol | None:
@@ -388,7 +391,7 @@ class Query:
         if detail is None:
             return None
         wanted = protocol_id.lower().replace("-", "_")
-        for item in get_report_protocols(Path(detail.path)):
+        for item in report_overview(Path(detail.path)):
             if item.id == protocol_id or item.id.lower().replace("-", "_") == wanted:
                 return Protocol.of(item)
         return None
