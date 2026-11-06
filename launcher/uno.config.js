@@ -2,10 +2,18 @@ import { defineConfig, presetUno, presetAttributify } from 'unocss'
 
 // Mirrors frontend/uno.config.js: the launcher and the dashboard must not
 // show a visible jump in style when the user moves between them.
+
+// As there: a Lucide icon's `:size="16"` is its size, not `size-16`.
+const OWN_ATTRIBUTES = [
+  'placeholder', 'fill', 'opacity', 'stroke-opacity',
+  'size', 'width', 'height', 'stroke', 'stroke-width'
+]
+const ATTRIBUTES_NOT_UTILITIES = OWN_ATTRIBUTES.flatMap(name => [name, `:${name}`, `v-bind:${name}`])
+
 export default defineConfig({
   presets: [
     presetUno(),
-    presetAttributify()
+    presetAttributify({ ignoreAttributes: ATTRIBUTES_NOT_UTILITIES })
   ],
   content: {
     // The dashboard sources live outside this package: scan them explicitly,

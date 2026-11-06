@@ -15,9 +15,9 @@
       :aria-pressed="visible"
       @click="visible = !visible"
     >
-      <!-- The fields' text is 12px: an eye of its height, not a heavier mark beside it. -->
-      <EyeOff v-if="visible" :size="13" :stroke-width="1.75" aria-hidden="true" />
-      <Eye v-else :size="13" :stroke-width="1.75" aria-hidden="true" />
+      <!-- The fields' text is 12px: an eye a little taller than it. -->
+      <EyeOff v-if="visible" :size="14" aria-hidden="true" />
+      <Eye v-else :size="14" aria-hidden="true" />
     </button>
   </div>
 </template>
