@@ -9,14 +9,15 @@
     />
     <button
       type="button"
-      class="absolute inset-y-0 right-0 flex items-center justify-center w-10 border-0 bg-transparent text-gray-400 hover:text-gray-700 cursor-pointer"
+      class="absolute inset-y-0 right-0 flex items-center justify-center w-8 border-0 bg-transparent text-gray-400 hover:text-gray-700 cursor-pointer"
       :aria-label="visible ? 'Hide password' : 'Show password'"
       :title="visible ? 'Hide password' : 'Show password'"
       :aria-pressed="visible"
       @click="visible = !visible"
     >
-      <EyeOff v-if="visible" :size="16" aria-hidden="true" />
-      <Eye v-else :size="16" aria-hidden="true" />
+      <!-- The fields' text is 12px: an eye of its height, not a heavier mark beside it. -->
+      <EyeOff v-if="visible" :size="13" :stroke-width="1.75" aria-hidden="true" />
+      <Eye v-else :size="13" :stroke-width="1.75" aria-hidden="true" />
     </button>
   </div>
 </template>
@@ -45,6 +46,6 @@ watch(() => props.modelValue, (value) => {
 
 <style scoped>
 .password-input {
-  padding-right: 2.75rem;
+  padding-right: 2.25rem;
 }
 </style>
