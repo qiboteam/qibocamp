@@ -46,9 +46,11 @@ jobs:
         include:
           # Apple Silicon only: Intel Macs are legacy, and a universal
           # binary compiles everything twice. The runner is ARM, so this is
-          # its own target, and needs no other installed.
+          # its own target, and needs no other installed. macOS 15: GitHub
+          # retired the macOS 14 images on 2026-11-02, cancelling every job
+          # still asking for them.
           - label: macOS
-            os: macos-14
+            os: macos-15
             target: aarch64-apple-darwin
             bundles: app,dmg
           - label: Linux

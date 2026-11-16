@@ -62,8 +62,9 @@ jobs:
         include:
           - system: x86_64-linux
             os: ubuntu-latest
+          # As launcher.yml: the macOS 14 images are retired.
           - system: aarch64-darwin
-            os: macos-14
+            os: macos-15
     env:
       # Absent until a maintainer creates the cache (docs/developer/nix.md),
       # and on pull requests from forks: then the Cachix steps are skipped.
@@ -104,12 +105,13 @@ jobs:
           purge-primary-key: never
 
       # Every package and check: pytest inside qibocamp, the dashboard's and
-      # the launcher's node suites, the formatting of the Nix files.
+      # the launcher's node suites, the formatting of the Nix files. On past
+      # a failure, so that one run reports every hash to update.
       - name: Build and check
         shell: bash
         run: |
           set -o pipefail
-          nix flake check -L 2>&1 | tee "$RUNNER_TEMP/nix-check.log"
+          nix flake check -L --keep-going 2>&1 | tee "$RUNNER_TEMP/nix-check.log"
 
       # A lockfile changed without its hash: say which, and how to fix it.
       - name: Explain a hash mismatch
