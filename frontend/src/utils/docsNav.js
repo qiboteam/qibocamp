@@ -152,6 +152,12 @@ export const DEFAULT_DOCS_NAV = [
         path: 'developer/design-system',
         title: 'Design System & Aesthetics',
         description: 'BackMarket design palette, typography, and print media CSS'
+      },
+      {
+        id: 'developer/nix',
+        path: 'developer/nix',
+        title: 'The Nix Package',
+        description: 'The flake, its hashes, its CI, and the binary cache'
       }
     ]
   },

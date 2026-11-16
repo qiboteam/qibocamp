@@ -1,0 +1,176 @@
+name: Nix package
+
+# The flake's packages and checks, on the two systems it supports (#101).
+# tests.yml stays the authoritative test run, with the locked Python
+# dependencies; this one builds what `nix run github:qiboteam/qibocamp`
+# gives, with nixpkgs', and fills the binary cache from main and releases.
+on:
+  pull_request:
+    paths:
+      - "flake.nix"
+      - "flake.lock"
+      - "nix/**"
+      - "src/**"
+      - "tests/**"
+      - "docs/**"
+      - "data/**"
+      - "sample_data/**"
+      - "launcher/**"
+      - "frontend/**"
+      - "pyproject.toml"
+      - ".github/workflows/nix.yml"
+  push:
+    branches: [main]
+    paths:
+      - "flake.nix"
+      - "flake.lock"
+      - "nix/**"
+      - "src/**"
+      - "tests/**"
+      - "docs/**"
+      - "data/**"
+      - "sample_data/**"
+      - "launcher/**"
+      - "frontend/**"
+      - "pyproject.toml"
+      - ".github/workflows/nix.yml"
+  release:
+    types: [published]
+  # Also how flake-update.yml has its pull request built: a pull request
+  # opened with the workflow token starts no workflow, a dispatch does.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nix-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.system }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    # Purging the GitHub Actions caches this job replaced.
+    permissions:
+      contents: read
+      actions: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - system: x86_64-linux
+            os: ubuntu-latest
+          - system: aarch64-darwin
+            os: macos-14
+    env:
+      # Absent until a maintainer creates the cache (docs/developer/nix.md),
+      # and on pull requests from forks: then the Cachix steps are skipped.
+      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+    steps:
+      # The whole history: the flake's `self.rev`, the commit the packages
+      # claim, is only known for a complete checkout.
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+
+      # Reads the cache everywhere; pushes from main and releases only.
+      - name: Use the qiboteam binary cache
+        if: env.CACHIX_AUTH_TOKEN != ''
+        uses: cachix/cachix-action@v17
+        with:
+          name: qiboteam
+          authToken: ${{ env.CACHIX_AUTH_TOKEN }}
+          skipPush: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
+
+      # A CI-only speed-up: the store as the last run on main left it,
+      # nixpkgs' dependencies included, which Cachix does not hold.
+      - name: Restore the Nix store
+        uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ matrix.system }}-${{ hashFiles('flake.lock', 'launcher/src-tauri/Cargo.lock', '**/pnpm-lock.yaml') }}
+          restore-prefixes-first-match: nix-${{ matrix.system }}-
+          save: ${{ github.ref == 'refs/heads/main' }}
+          gc-max-store-size-linux: 5G
+          gc-max-store-size-macos: 4G
+          purge: ${{ github.ref == 'refs/heads/main' }}
+          purge-prefixes: nix-${{ matrix.system }}-
+          purge-created: 0
+          purge-primary-key: never
+
+      # Every package and check: pytest inside qibocamp, the dashboard's and
+      # the launcher's node suites, the formatting of the Nix files.
+      - name: Build and check
+        shell: bash
+        run: |
+          set -o pipefail
+          nix flake check -L 2>&1 | tee "$RUNNER_TEMP/nix-check.log"
+
+      # A lockfile changed without its hash: say which, and how to fix it.
+      - name: Explain a hash mismatch
+        if: failure()
+        shell: bash
+        run: |
+          [ -f "$RUNNER_TEMP/nix-check.log" ] || exit 0
+          awk '
+            /hash mismatch in fixed-output derivation/ { match($0, /\/nix\/store\/[^'"'"']*/); drv = substr($0, RSTART, RLENGTH) }
+            /got: *sha256-/ && drv != "" { sub(/.*got: */, ""); print drv " " $0; drv = "" }
+          ' "$RUNNER_TEMP/nix-check.log" | while read -r drv hash; do
+            case "$drv" in
+              *qibocamp-desktop*) file=nix/desktop.nix; lock=launcher/pnpm-lock.yaml ;;
+              *qibocamp-dashboard*) file=nix/dashboard.nix; lock=frontend/pnpm-lock.yaml ;;
+              *) file=nix/; lock="a lockfile" ;;
+            esac
+            echo "::error file=$file::$lock changed without its Nix hash. Run nix/update-hashes.sh, or set the pnpmDeps hash in $file to $hash."
+          done
+
+      - name: The command line knows its commit
+        shell: bash
+        run: |
+          qibocamp="$(nix build --no-link --print-out-paths .#qibocamp)/bin/qibocamp"
+          "$qibocamp" --version
+          port=8731
+          export HOME="$(mktemp -d)"
+          "$qibocamp" report server sample_data --host 127.0.0.1 --port "$port" --no-register &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          for _ in $(seq 60); do
+            answer="$(curl -fsS "http://127.0.0.1:$port/api/version" 2>/dev/null)" && break
+            sleep 1
+          done
+          echo "$answer"
+          commit="$(printf '%s' "$answer" | python3 -c 'import json, sys; print(json.load(sys.stdin)["commit"])')"
+          if [ "$commit" != "$GITHUB_SHA" ]; then
+            echo "::error::/api/version names commit '$commit', not the one built, $GITHUB_SHA."
+            exit 1
+          fi
+
+      # It must still be running when stopped: an application that exits by
+      # itself, crashing or failing to start, fails the step.
+      - name: Open the application once
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          desktop="$(nix build --no-link --print-out-paths .#qibocamp-desktop)"
+          test -x "$desktop/bin/qibocamp"
+          nix shell --inputs-from . nixpkgs#xvfb-run --command bash -c '
+            set +e
+            WEBKIT_DISABLE_COMPOSITING_MODE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1 \
+              timeout --signal=TERM 20 xvfb-run --auto-servernum "$0/bin/qibocamp-desktop"
+            status=$?
+            [ "$status" -eq 124 ] || { echo "::error::The application exited by itself, with status $status."; exit 1; }
+          ' "$desktop"
+
+      - name: The macOS application is there
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          desktop="$(nix build --no-link --print-out-paths .#qibocamp-desktop)"
+          test -x "$desktop/Applications/Qibocamp.app/Contents/MacOS/qibocamp-desktop"
+          test -x "$desktop/bin/qibocamp-desktop"
+          test -x "$desktop/bin/qibocamp"

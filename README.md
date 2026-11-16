@@ -43,6 +43,15 @@ opening them the first time. The application installs the `qibocamp` command
 line it drives by itself, the first time it is needed; a Python 3.10 or newer
 is all it asks of the machine.
 
+With Nix, on Linux and Apple silicon, the application comes with its command
+line:
+
+```bash
+nix run github:qiboteam/qibocamp
+```
+
+See [With Nix](docs/user-guide/launcher/installation.md#with-nix).
+
 ## 📊 The Qibocamp Dashboard
 
 A static single-page application, from [`frontend/`](frontend/), deployed at

@@ -1,0 +1,46 @@
+name: Update flake.lock
+
+# Once a week, nixpkgs moves on: a pull request touching flake.lock alone,
+# built by nix.yml, for a maintainer to merge when it is green (#101).
+on:
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+      # To start nix.yml on the pull request's branch, below.
+      actions: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+
+      - name: Open or update the pull request
+        id: update
+        uses: DeterminateSystems/update-flake-lock@v29
+        with:
+          pr-title: "Nix: update flake.lock"
+          pr-labels: dependencies
+
+      # A pull request opened with the workflow token starts no workflow; a
+      # dispatch does, and its result shows on the pull request's commit.
+      - name: Build it
+        if: steps.update.outputs.pull-request-number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ steps.update.outputs.pull-request-number }}
+        run: |
+          branch="$(gh pr view "$NUMBER" --json headRefName --jq .headRefName)"
+          gh workflow run nix.yml --ref "$branch"
+          echo "nix.yml started on $branch, for #$NUMBER."

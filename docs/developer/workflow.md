@@ -88,6 +88,8 @@ devenv shell -- build-wheel
 # or: uv build
 ```
 
+The flake packages the application, the command line and the dashboard for Nix users; after changing a `pnpm-lock.yaml`, run `nix/update-hashes.sh` — or let CI say which hash to set. See [The Nix Package](nix.md).
+
 ---
 
 ## 🏷️ Versions & Releases

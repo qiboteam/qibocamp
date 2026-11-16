@@ -31,3 +31,34 @@ Either way the answer is remembered: subsequent launches open directly.
 On **Windows**, SmartScreen shows *Windows protected your PC*: choose **More info → Run anyway**. On **Linux** nothing is in the way — the `.deb` and the AppImage install and run as they are. The application's binary is `qibocamp-desktop`, so `qibocamp` in a terminal stays the command line.
 
 Maintainers who do hold the credentials only have to set the repository secrets `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD` and `APPLE_SIGNING_IDENTITY` — plus `APPLE_ID`, `APPLE_PASSWORD` and `APPLE_TEAM_ID` for notarization: the build workflow picks them up on its own, and the installers it publishes then open with a double click.
+
+## With Nix
+
+On Linux (x86_64) and macOS (Apple silicon), the application is also a [Nix](https://nixos.org) flake:
+
+```bash
+nix run github:qiboteam/qibocamp            # the latest main
+nix run github:qiboteam/qibocamp/v0.1.0a2   # a release, pinned by its tag
+nix profile install github:qiboteam/qibocamp
+```
+
+The last puts both `qibocamp-desktop`, the application, and `qibocamp`, the command line, on the `PATH`. On macOS, the application bundle is in the package's `Applications/Qibocamp.app`; Nix runs it from the store, so no quarantine stands in the way. `nix run github:qiboteam/qibocamp#server` runs the command line alone, and the flake's packages are `qibocamp-desktop`, `qibocamp` and `qibocamp-dashboard` — the dashboard as a static site — also available as an overlay.
+
+The Nix application **ships with its command line**: it runs that one, installs none, and **Configuration** says so. It is updated with the application, by Nix — `nix profile upgrade`, or a newer tag — and a server started on another machine installs, there, the very commit the package was built from, as the installers' does. **Another environment**, in the developer options, still wins over it, to work on a checkout.
+
+The project's binary cache, `qiboteam.cachix.org`, holds what the flake builds from `main` and from releases, so that nothing is compiled: `cachix use qiboteam` adds it once and for all, or, on NixOS,
+
+```nix
+nix.settings = {
+  extra-substituters = [ "https://qiboteam.cachix.org" ];
+  extra-trusted-public-keys = [ "qiboteam.cachix.org-1:…" ]; # the key on the cache's page
+};
+```
+
+Without it, Nix builds the application, which takes a while the first time.
+
+A few things depend on the system rather than on the package:
+
+- **The tray icon**, on GNOME, needs the AppIndicator extension, as with the `.deb`; KDE shows it as it is.
+- **Notebook kernels** are created with `uv`, or `venv` and `pip`, from PyPI's wheels, as everywhere else. On NixOS, wheels with compiled code — numpy, and most of Qibocal's stack — need [`programs.nix-ld.enable = true`](https://wiki.nixos.org/wiki/Nix-ld) to load.
+- **A blank or flickering window**, with NVIDIA drivers or in a virtual machine, is WebKitGTK's: start the application with `WEBKIT_DISABLE_DMABUF_RENDERER=1`.
