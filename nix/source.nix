@@ -40,6 +40,8 @@ in
       ../sample_data
       # tests/test_names.py checks the command line names servers as the dashboard does.
       ../frontend/src/utils/names.js
+      # tests/test_cli.py starts `report dev`, which looks for the frontend's project.
+      ../frontend/package.json
     ];
   };
 

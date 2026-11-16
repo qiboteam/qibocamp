@@ -32,6 +32,8 @@ class Recorded:
 
 
 def test_the_commit_is_the_one_pip_recorded(monkeypatch):
+    # No packager's commit: the Nix package's tests run with one written in.
+    monkeypatch.setattr(version._build, "COMMIT", None)
     sha = "0123456789abcdef0123456789abcdef01234567"
     cases = [
         ({"url": "https://github.com/qiboteam/qibocamp", "vcs_info": {"vcs": "git", "commit_id": sha}}, sha),

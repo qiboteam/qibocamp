@@ -179,6 +179,12 @@ DOCS_NAVIGATION = [
                     "BackMarket design palette, typography, and print media CSS"
                 ),
             },
+            {
+                "id": "developer/nix",
+                "path": "developer/nix",
+                "title": "The Nix Package",
+                "description": "The flake, its hashes, its CI, and the binary cache",
+            },
         ],
     },
     {

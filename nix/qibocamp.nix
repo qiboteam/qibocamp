@@ -2,6 +2,7 @@
 {
   lib,
   python3Packages,
+  uv,
   versionCheckHook,
   src,
   version,
@@ -41,9 +42,12 @@ python3Packages.buildPythonApplication {
     ]
     ++ uvicorn.optional-dependencies.standard;
 
-  nativeCheckInputs = with python3Packages; [
-    pytestCheckHook
-    pytest-asyncio
+  # uv: the tests of the Qibocal installer ask for an installer on the PATH,
+  # and nixpkgs' Python has no pip.
+  nativeCheckInputs = [
+    python3Packages.pytestCheckHook
+    python3Packages.pytest-asyncio
+    uv
   ];
 
   # The configuration and caches go under the home directory.
