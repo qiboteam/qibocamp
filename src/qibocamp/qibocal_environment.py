@@ -188,7 +188,9 @@ def prepare_environment(path: Path) -> Path:
                     )
             site_packages = _environment_site_packages(path)
             site_packages.mkdir(parents=True, exist_ok=True)
-            line = f"import site; [site.addsitedir(p) for p in {_server_site_packages(site_packages)!r}]\n"
+            # No comprehension: before Python 3.12 its own scope would not see
+            # `site`, imported by the line, which site.py runs with separate locals.
+            line = f"import site; list(map(site.addsitedir, {_server_site_packages(site_packages)!r}))\n"
             path_file = site_packages / _PATH_FILE
             if not path_file.is_file() or path_file.read_text(encoding="utf-8") != line:
                 path_file.write_text(line, encoding="utf-8")
