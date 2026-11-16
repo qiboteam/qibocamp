@@ -153,8 +153,9 @@
             >
               <Play class="w-3.5 h-3.5" /> Start
             </button>
+            <!-- Here, with the command line the application ships with: Nix updates it, not this. -->
             <button
-              v-if="launchOptionsFor(server)"
+              v-if="launchOptionsFor(server) && (launchOptionsFor(server).ssh || !state.environment?.bundled)"
               type="button"
               class="lx-action"
               :disabled="updating === server.id"

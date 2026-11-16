@@ -44,7 +44,21 @@ fn build_tag() -> Option<String> {
     (!tag.is_empty()).then_some(tag)
 }
 
+/// The command line a packager ships with this build, by its absolute path:
+/// the Nix flake sets `QIBOCAMP_BUNDLED_EXECUTABLE`. Unset, the launcher
+/// installs its own, as the installers do.
+fn bundled_executable() -> Option<String> {
+    println!("cargo:rerun-if-env-changed=QIBOCAMP_BUNDLED_EXECUTABLE");
+    std::env::var("QIBOCAMP_BUNDLED_EXECUTABLE")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
 fn main() {
+    if let Some(executable) = bundled_executable() {
+        println!("cargo:rustc-env=QIBOCAMP_BUNDLED_EXECUTABLE={executable}");
+    }
     if let Some(commit) = build_commit() {
         println!("cargo:rustc-env=QIBOCAMP_BUILD_COMMIT={commit}");
     }

@@ -43,3 +43,27 @@ def test_the_commit_is_the_one_pip_recorded(monkeypatch):
     for origin, commit in cases:
         monkeypatch.setattr(version, "distribution", lambda _name, origin=origin: Recorded(origin))
         assert version.installed_commit() == commit
+
+
+def test_without_pip_s_records_the_packager_s_commit(monkeypatch):
+    # The Nix flake writes the commit in `_build`: no direct_url.json there.
+    sha = "fedcba9876543210fedcba9876543210fedcba98"
+    monkeypatch.setattr(version, "distribution", lambda _name: Recorded(None))
+    monkeypatch.setattr(version._build, "COMMIT", sha)
+    assert version.installed_commit() == sha
+    assert version.default_install() == f"git+https://github.com/qiboteam/qibocamp@{sha}"
+
+    def missing(_name):
+        raise version.PackageNotFoundError("qibocamp")
+
+    monkeypatch.setattr(version, "distribution", missing)
+    assert version.installed_commit() == sha, "nor any distribution at all"
+
+    pip_s = "0123456789abcdef0123456789abcdef01234567"
+    monkeypatch.setattr(version, "distribution", lambda _name: Recorded({"url": "x", "vcs_info": {"commit_id": pip_s}}))
+    assert version.installed_commit() == pip_s, "pip's record first"
+
+    monkeypatch.setattr(version._build, "COMMIT", None)
+    monkeypatch.setattr(version, "distribution", lambda _name: Recorded(None))
+    assert version.installed_commit() is None
+    assert version.default_install().endswith("@main")

@@ -1,7 +1,7 @@
 import { reactive, computed, watch } from 'vue'
 import { desktop, isDesktop, openInNewWindow, subscribe } from './bridge.js'
 import { defaultLaunch, launchKeys, syncDashboardServers, serverUrl } from './lib/servers.js'
-import { installationBehind } from './lib/versions.js'
+import { bundledCli, installationBehind } from './lib/versions.js'
 import { processNews, unattended } from './lib/alerts.js'
 import { loadNotices, nextNoticeId, storeNotices } from './lib/notices.js'
 import { machineKey, partitionAnswer, queueKey, queueOf } from './lib/slurm.js'
@@ -333,6 +333,11 @@ let followedBuild = false
 export async function ensureQibocamp() {
   const behind = hasQibocamp.value && !followedBuild && installationBehind(state.environment)
   if (hasQibocamp.value && !behind) return
+  if (bundledCli(state.environment)) {
+    // Shipped with the application, and not there: nothing the launcher may install.
+    fail('The command line this application ships with is missing; reinstall it through Nix.', 'settings')
+    throw new Error('The command line this application ships with is missing; reinstall it through Nix.')
+  }
   if (!hasQibocamp.value && !state.environment?.python) {
     fail('No Python 3.10 or newer was found to install qibocamp with.', 'settings')
     throw new Error('No Python 3.10 or newer was found to install qibocamp with; see Configuration.')
@@ -474,6 +479,8 @@ export async function updateServerInstallation(server) {
     if (!(await awaitExit(running.id))) throw new Error('The server did not stop in time.')
   }
   if (!options.ssh) {
+    // Shipped with the application: Nix updates it, so the server only starts again.
+    if (bundledCli(state.environment)) return startServer(options, { url: server.url })
     // The launcher's own installation: updated, awaited, then the server as before.
     const setup = await installCli(true)
     await awaitExit(setup.id, 30 * 60_000)

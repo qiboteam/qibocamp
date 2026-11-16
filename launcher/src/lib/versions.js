@@ -53,6 +53,20 @@ export function buildIdentity(environment) {
 }
 
 /**
+ * Whether this build ships with its command line — a packaged one, as the
+ * Nix flake makes: then the launcher installs and updates nothing, and its
+ * package manager does. A preference may still run another environment.
+ */
+export function bundledCli(environment) {
+  return environment?.bundled === true
+}
+
+/** Whether the launcher may install or update its own command line. */
+export function installOffered(environment) {
+  return Boolean(environment) && !bundledCli(environment)
+}
+
+/**
  * Whether the launcher's own installation is behind what it would install
  * now — the chosen version, or this build's commit, changed since it was
  * made — and so may lack what this launcher asks of it. Only when that

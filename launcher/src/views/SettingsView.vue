@@ -24,6 +24,10 @@
         <code class="lx-mono text-gray-500 truncate">{{ environment.executable }}</code>
         <span class="text-[11px] text-gray-400">{{ sourceLabel }}</span>
       </div>
+      <p v-else-if="bundled" class="text-xs text-red-700 bg-red-50 rounded-xl px-3 py-2 mb-4">
+        The command line this application ships with is missing. Reinstall the application through Nix, or
+        choose another environment in the developer options.
+      </p>
       <p v-else-if="installing" class="text-xs text-gray-700 bg-[#f7f5ff] rounded-xl px-3 py-2 mb-4 inline-flex items-center gap-2">
         <Loader2 class="w-3.5 h-3.5 lx-spin text-[#833dff]" />
         <span>Installing qibocamp, {{ describeSpec(environment?.package, environment) }}: the progress is in
@@ -35,13 +39,18 @@
         <router-link to="/processes" class="hover:text-amber-900">Running</router-link>.
       </p>
 
-      <p v-if="environment && !environment.python" class="text-xs text-red-700 bg-red-50 rounded-xl px-3 py-2 mb-4">
+      <p v-if="bundled" class="lx-help !mt-0 mb-4">
+        This application comes with its command line, from its Nix package: it is updated with the application,
+        through Nix, and the launcher installs nothing.
+      </p>
+
+      <p v-if="offersInstall && !environment.python" class="text-xs text-red-700 bg-red-50 rounded-xl px-3 py-2 mb-4">
         No Python 3.10 or newer was found on this machine to install qibocamp with. Install one — from
         <button type="button" class="text-[#833dff] hover:text-[#6b21a8]" @click="openExternal('https://www.python.org/downloads/')">python.org</button>
         or the system package manager — and come back: the launcher creates its environment with it.
       </p>
 
-      <div class="flex flex-wrap items-center gap-2">
+      <div v-if="offersInstall" class="flex flex-wrap items-center gap-2">
         <button
           v-if="!environment?.managedReady"
           type="button"
@@ -86,7 +95,8 @@
       <details class="lx-more">
         <summary><ChevronRight class="lx-chevron w-3.5 h-3.5" /> Developer options</summary>
         <div class="lx-more-body space-y-4">
-          <!-- Which qibocamp goes into the launcher's environment -->
+          <!-- Which qibocamp goes into the launcher's environment: none, when it shipped with one -->
+          <template v-if="offersInstall">
           <form-field
             v-slot="{ id }"
             label="Version"
@@ -135,13 +145,14 @@
             </button>
             <span v-if="listsError" class="lx-warning !mt-0">{{ listsError }}</span>
           </div>
+          </template>
 
           <!-- Another environment altogether -->
           <div>
             <p class="lx-label">Another environment</p>
             <p class="lx-help !mt-0 mb-2">
               For a checkout of qibocamp, or any environment that already has it: the choice wins over the
-              launcher's own installation, until <em>Detect again</em>. The command line must take the options this
+              {{ bundled ? 'command line this application ships with' : 'launcher\'s own installation' }}, until <em>Detect again</em>. The command line must take the options this
               launcher passes, as the current sources do.
             </p>
             <div class="flex flex-wrap items-center gap-2">
@@ -284,8 +295,10 @@ import {
   PYPI_URL,
   TAGS_URL,
   buildIdentity,
+  bundledCli,
   defaultSpec,
   describeSpec,
+  installOffered,
   parseRefs,
   parseReleases,
   versionOptions
@@ -300,6 +313,10 @@ const chosen = ref([])
 const platform = ref({ os: '—', arch: '' })
 
 const environment = computed(() => state.environment)
+/** The command line came with this build (Nix): nothing to install or update here. */
+const bundled = computed(() => bundledCli(environment.value))
+/** Whether the launcher installs its own command line: not when it shipped with one. */
+const offersInstall = computed(() => installOffered(environment.value))
 /** This build, as About names it: its release tag, or its commit. */
 const build = computed(() => buildIdentity(environment.value))
 const preferredExecutable = computed(() => state.preferences?.executable || null)
@@ -320,6 +337,7 @@ const { focused } = usePageKeys({
 
 const sourceLabel = computed(() => ({
   managed: 'the launcher\'s own installation',
+  bundled: 'shipped with this application',
   preference: 'chosen in the developer options',
   environment: 'from QIBOCAMP_EXECUTABLE',
   path: 'found on the PATH',

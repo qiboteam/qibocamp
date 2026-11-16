@@ -27,6 +27,20 @@ use crate::settings;
 pub const BUILD_COMMIT: Option<&str> = option_env!("QIBOCAMP_BUILD_COMMIT");
 /// The release tag this build was made for, when it was one (see build.rs).
 pub const BUILD_TAG: Option<&str> = option_env!("QIBOCAMP_BUILD_TAG");
+/// The command line this build ships with, when its packager provides one
+/// (see build.rs): the Nix flake does. It is then what the launcher runs,
+/// unless a preference says otherwise, and the launcher installs nothing.
+pub const BUNDLED_EXECUTABLE: Option<&str> = option_env!("QIBOCAMP_BUNDLED_EXECUTABLE");
+
+/// The bundled command line, when this build has one: an empty value is none.
+pub fn bundled_executable() -> Option<PathBuf> {
+    BUNDLED_EXECUTABLE
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+}
+
+const BUNDLED_REFUSAL: &str = "This Qibocamp comes with its command line; update it through Nix.";
 
 /// What goes into the managed environment, unless a preference says otherwise:
 /// the very commit this launcher is built from, installed from its archive —
@@ -54,8 +68,10 @@ const WORKER_SOURCE: &str = include_str!("../../../src/qibocamp/remote/notebook_
 pub struct Environment {
     /// Absolute path of the resolved interpreter, when one was found.
     pub executable: Option<String>,
-    /// How it was found: `preference`, `managed`, `environment`, `path` or `well-known`.
+    /// How it was found: `preference`, `bundled`, `managed`, `environment`, `path` or `well-known`.
     pub source: Option<String>,
+    /// This build ships with its command line: nothing to install or update.
+    pub bundled: bool,
     pub version: Option<String>,
     pub config_directory: String,
     /// Locations that were probed, to make a missing installation diagnosable.
@@ -186,6 +202,9 @@ pub async fn install_cli(app: AppHandle, upgrade: Option<bool>) -> Result<Proces
 
 /// Looking for a Python asks each candidate its version: off the main thread.
 fn install(app: AppHandle, upgrade: Option<bool>) -> Result<ProcessInfo, String> {
+    if bundled_executable().is_some() {
+        return Err(BUNDLED_REFUSAL.to_string());
+    }
     let supervisor = app.state::<Supervisor>();
     let (python, _) = find_python()?;
     let cache = launcher_cache();
@@ -311,6 +330,15 @@ pub fn resolve() -> (Option<(PathBuf, String)>, Vec<String>) {
         searched.push(path.display().to_string());
         if let Some(resolved) = normalize_candidate(&path) {
             return (Some((resolved, "preference".to_string())), searched);
+        }
+    }
+
+    // What this build ships with, before anything installed beside it: a
+    // preference still wins, to point a packaged launcher at a checkout.
+    if let Some(path) = bundled_executable() {
+        searched.push(path.display().to_string());
+        if let Some(resolved) = normalize_candidate(&path) {
+            return (Some((resolved, "bundled".to_string())), searched);
         }
     }
 
@@ -449,6 +477,7 @@ pub fn describe_environment() -> Environment {
     Environment {
         executable: executable.map(|path| path.display().to_string()),
         source,
+        bundled: bundled_executable().is_some(),
         version,
         config_directory: settings::config_dir().display().to_string(),
         searched,

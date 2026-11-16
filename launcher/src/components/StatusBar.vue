@@ -55,11 +55,16 @@ import { launcherHref } from '../lib/links.js'
 const versionLabel = computed(() => {
   const environment = state.environment
   if (!environment) return ''
-  if (!hasQibocamp.value) return installing.value ? 'qibocamp: installing' : 'qibocamp not installed'
+  if (!hasQibocamp.value) {
+    if (environment.bundled) return 'qibocamp missing from this package'
+    return installing.value ? 'qibocamp: installing' : 'qibocamp not installed'
+  }
   const version = String(environment.version || '').replace(/^qibocamp,?\s*version\s*/i, '').trim()
-  const held = environment.source === 'managed' && environment.managedPackage
-    ? describeSpec(environment.managedPackage, environment)
-    : ''
+  const held = environment.source === 'bundled'
+    ? 'bundled'
+    : environment.source === 'managed' && environment.managedPackage
+      ? describeSpec(environment.managedPackage, environment)
+      : ''
   return `qibocamp ${version || ''}${held ? ` · ${held}` : ''}`.replace(/\s+/g, ' ').trim()
 })
 const versionTitle = computed(() => state.environment?.executable || 'Configuration')

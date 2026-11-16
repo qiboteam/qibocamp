@@ -9,7 +9,7 @@ import json
 import re
 from importlib.metadata import PackageNotFoundError, distribution
 
-from qibocamp import __version__
+from qibocamp import __version__, _build
 
 # Raised on every breaking change of the REST or GraphQL API, never otherwise.
 API_VERSION = 1
@@ -22,11 +22,16 @@ ARCHIVE_COMMIT = re.compile(r"/archive/([0-9a-f]{40})\.(?:tar\.gz|zip)$")
 
 
 def installed_commit() -> str | None:
-    """The commit this installation was made from, when pip recorded one.
+    """The commit this installation was made from, when pip or its packager recorded one.
 
     A Git URL leaves it in `vcs_info`; the archive of a commit, in its URL.
-    A release, or a local checkout, has none.
+    Without pip's records, the packager's (`_build.COMMIT`, set by the Nix
+    flake). A release, or a local checkout, has none.
     """
+    return _recorded_commit() or _build.COMMIT or None
+
+
+def _recorded_commit() -> str | None:
     try:
         text = distribution("qibocamp").read_text("direct_url.json")
     except PackageNotFoundError:

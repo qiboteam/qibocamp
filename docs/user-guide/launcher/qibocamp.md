@@ -7,9 +7,12 @@ What gets installed, unless another version is chosen, is **the very commit the 
 The launcher then uses, in order:
 
 1. the environment chosen in the developer options;
-2. its own installation;
-3. the `QIBOCAMP_EXECUTABLE` environment variable;
-4. the `PATH`;
-5. the usual places — `~/.local/bin`, pipx environments, `.venv` folders, `/usr/local/bin`, `/opt/homebrew/bin`.
+2. the command line it ships with, when it is a packaged build — the Nix package is one;
+3. its own installation;
+4. the `QIBOCAMP_EXECUTABLE` environment variable;
+5. the `PATH`;
+6. the usual places — `~/.local/bin`, pipx environments, `.venv` folders, `/usr/local/bin`, `/opt/homebrew/bin`.
+
+A packaged build installs and updates nothing: **Configuration** says the command line *shipped with this application*, offers neither **Install qibocamp** nor **Update** nor a version to pick, and a server on this machine has no **Update** of its own — its package manager updates them both. **Another environment** still wins over it, for a checkout.
 
 The **developer options**, folded under the installation, hold two things. **Version** picks what goes into the launcher's environment — this build's commit first, then the releases on PyPI and the branches and tags of the repository, fetched when the page opens, or *something else*: any requirement `pip install` accepts, a local checkout included. **Save version** stores the choice in `launcher.json`, and the button above becomes **Switch to …** while the installed version differs from the chosen one. **Another environment** is for a checkout of Qibocamp: **Choose environment…** and **Choose executable…** point the launcher at an environment that already has Qibocamp — a virtual environment folder is enough, the launcher looks inside its `bin` (or `Scripts`) directory — and **Detect again** goes back to its own installation. Both choices live in `launcher.json`, next to the other configuration files. The **About** card at the end of the page names this very build — the release it was made for, by its tag, or else the commit it was built from, never a branch — as a link to its page on GitHub, next to the platform it runs on.

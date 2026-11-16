@@ -6,7 +6,9 @@ import {
   archiveSpec,
   defaultSpec,
   buildIdentity,
+  bundledCli,
   describeSpec,
+  installOffered,
   installationBehind,
   parseRefs,
   parseReleases,
@@ -81,6 +83,19 @@ test('the installation is behind when it is not what would be installed now', ()
   assert.equal(installationBehind({ ...managed, source: 'preference' }), false, 'another environment is not the launcher\'s to update')
   assert.equal(installationBehind({ ...managed, managedPackage: null }), false)
   assert.equal(installationBehind(null), false)
+})
+
+test('a build that ships with its command line installs and updates nothing', () => {
+  const bundled = { source: 'bundled', bundled: true, executable: '/nix/store/x-qibocamp/bin/qibocamp', defaultPackage: archiveSpec('commit', 'abc1234') }
+  assert.equal(bundledCli(bundled), true)
+  assert.equal(installOffered(bundled), false)
+  assert.equal(installationBehind(bundled), false, 'never behind: Nix updates it')
+  // A preference still runs another environment, and the build still installs nothing.
+  assert.equal(installOffered({ ...bundled, source: 'preference' }), false)
+  assert.equal(bundledCli({ source: 'managed', bundled: false }), false)
+  assert.equal(installOffered({ source: 'managed', bundled: false }), true, 'the installers, as before')
+  assert.equal(installOffered({ source: 'managed' }), true, 'a launcher that does not say: as before')
+  assert.equal(installOffered(null), false, 'nothing known yet')
 })
 
 test('the picker leads with this build and keeps the current choice', () => {
