@@ -25,6 +25,10 @@ A Nix build has no `.git` and no pip records, so the two ways the commit is usua
 
 The application is built with `QIBOCAMP_BUNDLED_EXECUTABLE` set to the package's `qibocamp`: it runs that one (source `bundled`), after a preference and before its own installation, and refuses to install or update any. The installers set nothing, and behave as before.
 
+## Qibocal, outside the store
+
+The store's Python is read-only, and imports `qibocamp` only because the wrapper of `bin/qibocamp` adds its path: `sys.executable`, which the server installs Qibocal into and starts the plot worker with, can do neither. So the wrapper sets `QIBOCAMP_QIBOCAL_ENVIRONMENT=separate` (a default; a user's own value wins): the server then keeps Qibocal in a virtual environment of its own, `$XDG_CACHE_HOME/qibocamp/envs/qibocal-py3.X`, made from the store's Python, with a path file adding the package's `site-packages` after its own (`qibocal_environment.prepare_environment`). Installing, switching and reading Qibocal's version all happen there, and plots are generated with that environment's Python. A Python update of the package upgrades the environment in place (`venv --upgrade`), keeping Qibocal; a new minor version starts a new one. Elsewhere the variable is unset, and Qibocal lives in the server's own interpreter, as always.
+
 ## Hashes
 
 The Rust crates need none: `cargoLock.lockFile` fetches each by the checksum in `Cargo.lock`. The pnpm dependencies of `launcher/` and `frontend/` are two fixed-output derivations, whose hashes, in `nix/desktop.nix` and `nix/dashboard.nix`, must follow `pnpm-lock.yaml`. After changing a lockfile:
@@ -51,12 +55,6 @@ The GitHub Actions cache keeps the store between runs, for speed; only `main` sa
 
 Users get the builds from `qiboteam.cachix.org`, filled by `nix.yml` from `main` and releases. It holds Qibocamp's own outputs and its fetched dependencies, not what `cache.nixos.org` already has — WebKitGTK, Python and the rest: a few hundred megabytes, well within the free plan's 5 GB, with the least recently used paths dropped first.
 
-Setting it up, once, needs a maintainer:
-
-1. sign in to [Cachix](https://app.cachix.org) with GitHub, create a `qiboteam` organization, and in it a **public** cache named `qiboteam`;
-2. create an auth token that writes to that cache, and store it as the repository secret `CACHIX_AUTH_TOKEN`;
-3. copy the cache's public signing key, `qiboteam.cachix.org-1:…`, into `flake.nix` — as `nixConfig.extra-substituters = [ "https://qiboteam.cachix.org" ]` and `extra-trusted-public-keys` — and into the NixOS snippet of the installation page.
-
-Until the secret exists, `nix.yml` skips the cache, and builds everything else. Pull requests read the cache and never push.
+It belongs to the `qiboteam` Cachix organization. `nix.yml` writes to it with the repository secret `CACHIX_AUTH_TOKEN`; its public key, `qiboteam.cachix.org-1:uBKM05W3C7MNXwT1GxMa1c/juaBCSZe34iMokEu66gA=`, is in `flake.nix`'s `nixConfig` and in the NixOS snippet of the installation page. Without the secret — on pull requests from forks — the cache step is skipped and everything else builds. Pull requests and dispatched runs read the cache and never push.
 
 Should the cache outgrow 5 GB, or Cachix go away, the same protocol works from any bucket: a Cloudflare R2 bucket, a signing key of ours (`nix key generate-secret`) as a secret, `nix store sign` and `nix copy --to "s3://…"` in place of the Cachix step, the bucket on a domain of ours, and the URL and key changed in `flake.nix` and the docs. The cleanup Cachix does would then be ours to write.

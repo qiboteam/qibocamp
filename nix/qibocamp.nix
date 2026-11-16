@@ -42,6 +42,21 @@ python3Packages.buildPythonApplication {
     ]
     ++ uvicorn.optional-dependencies.standard;
 
+  # The store's Python is read-only, and imports qibocamp only through this
+  # wrapper: Qibocal goes into an environment of the server's own, in the
+  # cache, which sees this qibocamp (qibocamp/qibocal_environment.py). A
+  # default, which a user's own setting overrides. uv, after the user's own,
+  # installs it faster than that environment's pip.
+  makeWrapperArgs = [
+    "--set-default"
+    "QIBOCAMP_QIBOCAL_ENVIRONMENT"
+    "separate"
+    "--suffix"
+    "PATH"
+    ":"
+    (lib.makeBinPath [ uv ])
+  ];
+
   # uv: the tests of the Qibocal installer ask for an installer on the PATH,
   # and nixpkgs' Python has no pip.
   nativeCheckInputs = [

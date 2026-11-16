@@ -131,14 +131,20 @@ jobs:
             echo "::error file=$file::$lock changed without its Nix hash. Run nix/update-hashes.sh, or set the pnpmDeps hash in $file to $hash."
           done
 
-      - name: The command line knows its commit
+      # As a user runs it: its commit in /api/version, and plots generated in
+      # the Qibocal environment it makes, outside the read-only store.
+      - name: The command line knows its commit, and where Qibocal goes
         shell: bash
         run: |
           qibocamp="$(nix build --no-link --print-out-paths .#qibocamp)/bin/qibocamp"
           "$qibocamp" --version
           port=8731
           export HOME="$(mktemp -d)"
-          "$qibocamp" report server sample_data --host 127.0.0.1 --port "$port" --no-register &
+          unset XDG_CACHE_HOME
+          reports="$RUNNER_TEMP/reports"
+          mkdir -p "$reports"
+          unzip -q sample_data/test-data.zip -d "$reports"
+          "$qibocamp" report server "$reports" --host 127.0.0.1 --port "$port" --no-register &
           server=$!
           trap 'kill "$server" 2>/dev/null || true' EXIT
           for _ in $(seq 60); do
@@ -151,6 +157,16 @@ jobs:
             echo "::error::/api/version names commit '$commit', not the one built, $GITHUB_SHA."
             exit 1
           fi
+          # No Qibocal yet: the worker must start, import qibocamp, and say so.
+          report="$(curl -fsS "http://127.0.0.1:$port/api/reports" | python3 -c 'import json, sys; print(json.load(sys.stdin)[0]["id"])')"
+          encoded="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "$report")"
+          generated="$(curl -fsS -X POST "http://127.0.0.1:$port/api/reports/$encoded/regenerate")"
+          printf '%s\n' "$generated" | head -c 2000; echo
+          if ! printf '%s' "$generated" | grep -q qibocal_not_installed; then
+            echo "::error::Regenerating '$report' did not reach the plot worker in the Qibocal environment."
+            exit 1
+          fi
+          ls -d "$HOME"/.cache/qibocamp/envs/qibocal-py*/bin/python
 
       # It must still be running when stopped: an application that exits by
       # itself, crashing or failing to start, fails the step.

@@ -223,6 +223,7 @@ Ask sparingly: every call costs the controller something. The launcher asks ever
 | Variable | Description | Default |
 | :--- | :--- | :--- |
 | `QIBOCAMP_DIR` | Absolute path to the calibration directory scanned for reports. | Set by CLI argument |
+| `QIBOCAMP_QIBOCAL_ENVIRONMENT` | Where the server installs Qibocal and generates plots: `separate`, for a virtual environment of its own in `$XDG_CACHE_HOME/qibocamp/envs/qibocal-py3.X`, or the path of one; made when first needed, from the server's Python, and seeing its `qibocamp`. The Nix package sets `separate`, its own Python being read-only. | Unset: the server's own interpreter |
 | `QIBOCAMP_NO_UV` | When set, the workers create and fill environments with venv and pip instead of uv. | Unset |
 | `QIBOCAMP_DASHBOARD_URL` | The dashboard that invitation links open, told the server's address. | `https://qibo.science/qibocamp` |
 | `QIBOCAMP_ALLOWED_ORIGINS` | Further origins whose pages may call the server from a browser, comma-separated — another deployment of the dashboard, say. The dashboard of `QIBOCAMP_DASHBOARD_URL`, the desktop launcher and pages of this machine (`localhost`) always may; any other page is refused, and a change it asks for — an upload included — is answered 403. | Unset |

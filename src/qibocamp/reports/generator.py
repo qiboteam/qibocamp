@@ -3,7 +3,6 @@
 import json
 import shutil
 import subprocess
-import sys
 import threading
 import uuid
 import weakref
@@ -20,6 +19,7 @@ from qibocamp.qibocal_environment import (
     EnvironmentOperationError,
     generation_environment,
     get_qibocal_status,
+    qibocal_python,
 )
 
 _REPORT_LOCKS = weakref.WeakValueDictionary()
@@ -338,9 +338,10 @@ def _generate_qibocal_protocols(
     result_path = report_dir.resolve() / f".qibocamp-generation-{uuid.uuid4().hex}.json"
     try:
         with generation_environment():
+            # Where Qibocal is installed: the server's interpreter, or its own environment.
             result = subprocess.run(
                 [
-                    sys.executable, "-m", "qibocamp.reports.generation_worker",
+                    qibocal_python(), "-m", "qibocamp.reports.generation_worker",
                     str(report_dir.resolve()), str(result_path),
                     *([json.dumps(protocol_ids)] if protocol_ids is not None else []),
                 ],

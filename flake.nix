@@ -1,6 +1,15 @@
 {
   description = "Qibocamp: the desktop application for Qibocal calibrations";
 
+  # What CI builds from main and releases, offered to whoever runs the flake:
+  # accepted once, or for good with `cachix use qiboteam`.
+  nixConfig = {
+    extra-substituters = [ "https://qiboteam.cachix.org" ];
+    extra-trusted-public-keys = [
+      "qiboteam.cachix.org-1:uBKM05W3C7MNXwT1GxMa1c/juaBCSZe34iMokEu66gA="
+    ];
+  };
+
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
   outputs =

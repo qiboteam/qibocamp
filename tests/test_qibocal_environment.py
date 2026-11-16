@@ -1705,7 +1705,18 @@ def test_fresh_worker_uses_changed_version_not_stale_parent_module(
     monkeypatch.setitem(sys.modules, "qibocal", stale)
     monkeypatch.setattr(subprocess, "run", _REAL_SUBPROCESS_RUN)
     monkeypatch.setattr(subprocess, "Popen", _REAL_SUBPROCESS_POPEN)
-    monkeypatch.setenv("PYTHONPATH", str(package.parent))
+    # The stand-in Qibocal first, and qibocamp still importable: where it is
+    # only found through the path — the Nix package's tests — replacing the
+    # path would leave the worker without it.
+    import qibocamp
+
+    monkeypatch.setenv(
+        "PYTHONPATH",
+        os.pathsep.join(
+            [str(package.parent), str(Path(qibocamp.__file__).resolve().parent.parent)]
+            + ([os.environ["PYTHONPATH"]] if os.environ.get("PYTHONPATH") else [])
+        ),
+    )
     for version in ("1.0", "2.0.1"):
         (package / "__init__.py").write_text(f"__version__ = '{version}'\n")
         protocols, error = generator._generate_qibocal_protocols(tmp_path)

@@ -1,4 +1,11 @@
-"""Inspect and administer Qibocal in the running server's Python environment."""
+"""Inspect and administer Qibocal in the running server's Python environment.
+
+That environment is the server's own interpreter, unless
+`QIBOCAMP_QIBOCAL_ENVIRONMENT` names another: `separate`, for a virtual
+environment of its own in the cache, or the path of one. The Nix package sets
+it, its interpreter being read-only: Qibocal is then installed in that
+environment, which sees this very qibocamp, and plots are generated there.
+"""
 
 import codecs
 import json
@@ -10,6 +17,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import sysconfig
 import threading
 import time
 from collections.abc import Callable
@@ -100,6 +108,124 @@ class EnvironmentOperationError(Exception):
         self.detail = detail
 
 
+# --- Where Qibocal runs --------------------------------------------------------
+
+ENVIRONMENT_VARIABLE = "QIBOCAMP_QIBOCAL_ENVIRONMENT"
+_PREPARE_LOCK = threading.Lock()
+_PATH_FILE = "qibocamp-server.pth"
+
+
+def separate_environment() -> Path | None:
+    """The environment Qibocal lives in, when it is not the server's own interpreter."""
+    value = os.environ.get(ENVIRONMENT_VARIABLE, "").strip()
+    if not value:
+        return None
+    if value == "separate":
+        cache = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
+        # One per Python minor version: the wheels installed there are built for it.
+        return cache / "qibocamp" / "envs" / f"qibocal-py{sys.version_info[0]}.{sys.version_info[1]}"
+    return Path(value).expanduser().absolute()
+
+
+def _environment_python(path: Path) -> Path:
+    return path / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+
+
+def _environment_site_packages(path: Path) -> Path:
+    scheme = "venv" if "venv" in sysconfig.get_scheme_names() else None
+    paths = sysconfig.get_paths(
+        **({"scheme": scheme} if scheme else {}),
+        vars={"base": str(path), "platbase": str(path)},
+    )
+    return Path(paths["purelib"])
+
+
+def _server_site_packages(own: Path) -> list[str]:
+    """The folders this qibocamp and its dependencies are imported from."""
+    found = []
+    for entry in sys.path:
+        server_s = entry and entry.endswith("site-packages") and Path(entry) != own
+        if server_s and Path(entry).is_dir() and entry not in found:
+            found.append(entry)
+    return found
+
+
+def prepare_environment(path: Path) -> Path:
+    """Create the environment, or bring it up to the running interpreter, and return its Python.
+
+    It is made from this interpreter, and sees this very qibocamp through a
+    path file: its own packages — Qibocal, and what Qibocal asks for — come
+    first, then the server's. Should the interpreter change, a Python update
+    of the Nix package say, the environment follows it and keeps Qibocal.
+    """
+    python = _environment_python(path)
+    base = getattr(sys, "_base_executable", None) or sys.executable
+    with _PREPARE_LOCK:
+        configuration = path / "pyvenv.cfg"
+        try:
+            text = configuration.read_text(encoding="utf-8") if configuration.is_file() else ""
+            home = next(
+                (
+                    line.split("=", 1)[1].strip()
+                    for line in text.splitlines()
+                    if line.split("=", 1)[0].strip() == "home"
+                ),
+                None,
+            )
+            arguments = None
+            if not python.exists() or home is None:
+                arguments = ["-m", "venv", str(path)]
+            elif Path(home) != Path(base).parent:
+                arguments = ["-m", "venv", "--upgrade", str(path)]
+            if arguments is not None:
+                result = subprocess.run(
+                    [base, *arguments], capture_output=True, text=True, timeout=INSTALL_TIMEOUT, check=False
+                )
+                if result.returncode:
+                    output = (result.stderr or result.stdout or "No output.").strip()
+                    raise EnvironmentOperationError(
+                        500, f"Could not create the Qibocal environment in '{path}': {output[-2000:]}"
+                    )
+            site_packages = _environment_site_packages(path)
+            site_packages.mkdir(parents=True, exist_ok=True)
+            line = f"import site; [site.addsitedir(p) for p in {_server_site_packages(site_packages)!r}]\n"
+            path_file = site_packages / _PATH_FILE
+            if not path_file.is_file() or path_file.read_text(encoding="utf-8") != line:
+                path_file.write_text(line, encoding="utf-8")
+        except (OSError, subprocess.SubprocessError) as error:
+            raise EnvironmentOperationError(
+                500, f"Could not prepare the Qibocal environment in '{path}': {error}"
+            ) from error
+    return python
+
+
+def qibocal_python() -> str:
+    """The interpreter Qibocal is installed in, and plots are generated with."""
+    path = separate_environment()
+    return sys.executable if path is None else str(prepare_environment(path))
+
+
+def _qibocal_distribution() -> metadata.Distribution:
+    """Qibocal's metadata, read from wherever it is installed, without importing it."""
+    path = separate_environment()
+    if path is None:
+        return metadata.distribution("qibocal")
+    found = next(
+        iter(metadata.distributions(name="qibocal", path=[str(_environment_site_packages(path))])),
+        None,
+    )
+    if found is None:
+        raise metadata.PackageNotFoundError("qibocal")
+    return found
+
+
+def _has_pip() -> bool:
+    path = separate_environment()
+    if path is None:
+        return util.find_spec("pip") is not None
+    return (_environment_site_packages(path) / "pip").is_dir()
+
+
 @contextmanager
 def generation_environment():
     """Keep package files stable for the lifetime of a generation subprocess."""
@@ -118,7 +244,7 @@ def generation_environment():
 
 def _read_status(expected_git_commit: str | None = None) -> QibocalStatus:
     try:
-        distribution = metadata.distribution("qibocal")
+        distribution = _qibocal_distribution()
         version = distribution.version or None
         direct_url = distribution.read_text("direct_url.json")
     except metadata.PackageNotFoundError:
@@ -177,7 +303,7 @@ def _read_status(expected_git_commit: str | None = None) -> QibocalStatus:
 def _record_git_branch(branch: str) -> None:
     """Retain the selected branch when the installer target is a pinned commit."""
     try:
-        distribution = metadata.distribution("qibocal")
+        distribution = _qibocal_distribution()
         origin_file = next(
             (
                 file
@@ -428,6 +554,7 @@ def _installer_commands(target: str, editable: bool = False) -> list[list[str]]:
     # and a change there is live at the next plot, without installing again.
     requirement = ["-e", target] if editable else [target]
     # uv first: it resolves and installs far faster than pip.
+    python = qibocal_python()
     uv = shutil.which("uv")
     if uv:
         return [
@@ -436,7 +563,7 @@ def _installer_commands(target: str, editable: bool = False) -> list[list[str]]:
                 "pip",
                 "install",
                 "--python",
-                sys.executable,
+                python,
                 "--upgrade-package",
                 "qibocal",
                 "--reinstall-package",
@@ -448,9 +575,9 @@ def _installer_commands(target: str, editable: bool = False) -> list[list[str]]:
                 *requirement,
             ]
         ]
-    if util.find_spec("pip") is not None:
+    if _has_pip():
         pip = [
-            sys.executable,
+            python,
             "-m",
             "pip",
             "install",

@@ -46,16 +46,18 @@ The last puts both `qibocamp-desktop`, the application, and `qibocamp`, the comm
 
 The Nix application **ships with its command line**: it runs that one, installs none, and **Configuration** says so. It is updated with the application, by Nix — `nix profile upgrade`, or a newer tag — and a server started on another machine installs, there, the very commit the package was built from, as the installers' does. **Another environment**, in the developer options, still wins over it, to work on a checkout.
 
-The project's binary cache, `qiboteam.cachix.org`, holds what the flake builds from `main` and from releases, so that nothing is compiled: `cachix use qiboteam` adds it once and for all, or, on NixOS,
+The project's binary cache, `qiboteam.cachix.org`, holds what the flake builds from `main` and from releases, so that nothing is compiled. The flake offers it on first use — accept it, or set `accept-flake-config = true` — though Nix only listens to a trusted user; otherwise `cachix use qiboteam` adds it once and for all, or, on NixOS,
 
 ```nix
 nix.settings = {
   extra-substituters = [ "https://qiboteam.cachix.org" ];
-  extra-trusted-public-keys = [ "qiboteam.cachix.org-1:…" ]; # the key on the cache's page
+  extra-trusted-public-keys = [ "qiboteam.cachix.org-1:uBKM05W3C7MNXwT1GxMa1c/juaBCSZe34iMokEu66gA=" ];
 };
 ```
 
 Without it, Nix builds the application, which takes a while the first time.
+
+**Qibocal**, which report servers plot with, is not part of the package: the store is read-only. A server from the flake keeps it in an environment of its own, `~/.cache/qibocamp/envs/qibocal-py3.X`, made from the package's Python on first need and seeing its very `qibocamp`; the **Qibocal** tab of the diagnostics footer installs and switches it there, as on any other machine. `QIBOCAMP_QIBOCAL_ENVIRONMENT` names another environment, by its path.
 
 A few things depend on the system rather than on the package:
 
