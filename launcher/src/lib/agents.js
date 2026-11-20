@@ -174,6 +174,34 @@ export function agentReports(entry = {}, name = DEFAULT_AGENT) {
 }
 
 /**
+ * The managed environment of a configuration, as `qibocamp agents rebuild`
+ * takes it: `{ name, venv, ssh, via }` — its `venv`, its name when it has
+ * none, on its SSH destination, reached from `via`, the destination of the
+ * machine it is kept for, if any. Null when it has no managed environment:
+ * a server interpreter instead.
+ */
+export function agentEnvironment(item = {}) {
+  const entry = item.entry || {}
+  if (String(entry.server_python || '').trim()) return null
+  const venv = String(entry.venv || '').trim() || item.name
+  const ssh = String(entry.ssh || '').trim() || null
+  const via = item.host && item.host !== 'local' ? item.destination || item.host : null
+  return { name: item.name, venv, ssh, via }
+}
+
+/** Where a configuration's managed environment is, in words. */
+export function describeAgentEnvironment(environment) {
+  if (!environment) return ''
+  const path = environment.venv.startsWith('/') || environment.venv.startsWith('~')
+    ? environment.venv
+    : `~/.cache/qibocal/agents/envs/${environment.venv}`
+  const host = environment.ssh
+    ? (environment.via ? `${environment.ssh}, reached from ${environment.via}` : environment.ssh)
+    : (environment.via || 'this machine')
+  return `${path} on ${host}`
+}
+
+/**
  * The registration of `qibocal-agent mcp` in an assistant: one for every
  * configuration, since it starts none until the assistant selects one.
  * `executable` is the absolute path of qibocal-agent, so an assistant

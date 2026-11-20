@@ -101,6 +101,19 @@
             <button type="button" class="lx-action" :disabled="startingReports === item.key" title="Start a report server on the execution host, serving its output, and open it in the dashboard" @click="reports(item)">
               <LayoutDashboard class="w-3.5 h-3.5" /> Reports
             </button>
+            <button
+              type="button"
+              class="lx-action"
+              :disabled="rebuilding === item.key || Boolean(runningOf(item)) || !agentEnvironment(item)"
+              :title="!agentEnvironment(item)
+                ? 'It runs a server interpreter of its own: there is no managed environment to regenerate'
+                : runningOf(item)
+                  ? 'Stop its run first: the environment is in use'
+                  : 'Delete its managed environment entirely; qibocal-agent creates it again from the configuration the next time it starts'"
+              @click="rebuild(item)"
+            >
+              <RefreshCw class="w-3.5 h-3.5" :class="{ 'lx-spin': rebuilding === item.key }" /> {{ rebuilding === item.key ? 'Regenerating…' : 'Regenerate env' }}
+            </button>
             <button type="button" class="lx-action" title="Edit it" @click="toggleEdit(item)">
               <Pencil class="w-3.5 h-3.5" /> Edit
             </button>
@@ -187,7 +200,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Bookmark, Files, LayoutDashboard, Pencil, Play, Plus, RefreshCw, Settings, Trash2, Upload, X } from 'lucide-vue-next'
 import AgentForm from '../components/AgentForm.vue'
-import { desktop, openExternal } from '../bridge.js'
+import { confirmAction, desktop, openExternal } from '../bridge.js'
 import {
   state, attempt, fail, notebookReportsServer, notify, refreshAgents,
   savePrompt, savedPrompts, startAgent, startNotebookReports
@@ -197,12 +210,14 @@ import {
   agentConfigurations,
   agentEditorValues,
   agentEntry,
+  agentEnvironment,
   agentNameError,
   agentRemotes,
   agentReports,
   agentReportsKey,
   agentShown,
   describeAgent,
+  describeAgentEnvironment,
   reachedRemote,
   withHostAgent,
   withLocalAgent
@@ -220,7 +235,9 @@ const editing = reactive({ key: null, form: blank(), busy: false })
 const filters = reactive({ kept: 'all', reaches: 'all' })
 const pushing = ref(null)
 const startingReports = ref(null)
-const run = reactive({ item: null, objective: '', busy: false })
+/** The configuration whose environment is being regenerated, by key. */
+const rebuilding = ref(null)
+const run =reactive({ item: null, objective: '', busy: false })
 const addingPrompt = ref(false)
 const newPrompt = reactive({ name: '', text: '' })
 
@@ -383,6 +400,29 @@ async function reports(item) {
   )
   startingReports.value = null
   if (started && !running) router.push({ name: 'processes' })
+}
+
+/**
+ * Its managed environment deleted where its server starts; qibocal-agent
+ * creates it again, from the configuration alone, the next time it starts.
+ */
+async function rebuild(item) {
+  const environment = agentEnvironment(item)
+  if (!environment) return
+  const confirmed = await confirmAction(
+    `The environment of ${item.name}, ${describeAgentEnvironment(environment)}, is deleted entirely, with everything installed in it; ` +
+      'qibocal-agent creates it again from the configuration alone the next time it starts — a run, or an assistant selecting it. ' +
+      'Stop any assistant using it first. This cannot be undone.',
+    { title: 'Regenerate the environment', okLabel: 'Regenerate env' }
+  )
+  if (!confirmed) return
+  rebuilding.value = item.key
+  const answer = await attempt(() => desktop.rebuildAgentEnvironment(environment), null, 'agents')
+  rebuilding.value = null
+  if (answer === undefined) return
+  notify(answer?.removed
+    ? `The environment of ${item.name} is deleted; qibocal-agent creates it again the next time it starts.`
+    : `${item.name} had no environment yet; qibocal-agent creates it the next time it starts.`, 'agents')
 }
 
 /** The run of this configuration, while it lasts. */

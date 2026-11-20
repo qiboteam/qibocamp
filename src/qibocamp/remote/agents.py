@@ -84,6 +84,94 @@ def push(ssh: str, agents: dict, remove: list[str] | None = None, timeout: float
     return json.loads(completed.stdout.strip().splitlines()[-1])
 
 
+# What deletes a configuration's managed environment where qibocal-agent made
+# it, the standard library only: resolved as qibocal-agent resolves `venv` —
+# relative under `$XDG_CACHE_HOME/qibocal/agents/envs`, `~` that host's — and
+# removed under its own provisioning lock, so never while it prepares one.
+# Only a Python environment is removed: a `venv` naming any other folder is
+# left as it is.
+REMOVE_ENVIRONMENT = r"""
+import hashlib, json, os, shutil, sys
+from pathlib import Path
+
+if os.name != "posix":
+    sys.exit("qibocal-agent manages environments on POSIX hosts only")
+import fcntl
+
+request = json.loads(sys.argv[1])
+cache = Path(os.environ.get("XDG_CACHE_HOME") or "~/.cache").expanduser().resolve() / "qibocal" / "agents"
+value = Path(request["venv"]).expanduser()
+path = (value if value.is_absolute() else cache / "envs" / value).resolve()
+if not path.exists():
+    print(json.dumps({"path": str(path), "removed": False}))
+    sys.exit(0)
+if not path.is_dir() or not (path / "pyvenv.cfg").is_file() or path in (Path.home().resolve(), Path(path.anchor)):
+    sys.exit(f"{path} is not a Python environment; left as it is")
+lock = cache / "locks" / (hashlib.sha256(str(path).encode()).hexdigest() + ".lock")
+lock.parent.mkdir(parents=True, exist_ok=True)
+with lock.open("a") as stream:
+    try:
+        fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        sys.exit(f"{path} is being prepared by qibocal-agent; try again once it is ready")
+    try:
+        shutil.rmtree(path)
+    finally:
+        fcntl.flock(stream, fcntl.LOCK_UN)
+print(json.dumps({"path": str(path), "removed": True}))
+"""
+
+# As qibocal-agent reaches a configuration's destination: never asking.
+BATCH = ["-T", "-o", "BatchMode=yes"]
+
+
+def remove_environment(
+    name: str,
+    venv: str | None = None,
+    ssh: str | None = None,
+    via: str | None = None,
+    timeout: float = 300.0,
+) -> dict:
+    """Delete the managed environment of the configuration `name`, for qibocal-agent to make again.
+
+    `venv` is the configuration's, its name when it has none. The environment
+    is where its calibration server starts: on `ssh`, the configuration's own
+    destination, taken whole as qibocal-agent takes it, or else where the
+    configuration is used — this machine, or `via`, the SSH destination of the
+    machine it is kept for, that `ssh` is then reached from. qibocal-agent
+    creates it again, from the configuration alone, the next time it starts.
+    """
+    if not NAME.fullmatch(name) or name in RESERVED:
+        raise click.ClickException(f"Invalid agent name: {name!r}.")
+    venv = name if venv is None else venv.strip()
+    if not venv:
+        raise click.ClickException("The environment must be a nonempty name or path.")
+    request = json.dumps({"venv": venv})
+    remote = f"python3 -c {shlex.quote(REMOVE_ENVIRONMENT)} {shlex.quote(request)}"
+    if via:
+        try:
+            options, destination = ssh_arguments(via)
+        except ValueError as error:
+            raise click.ClickException(str(error)) from error
+        if ssh:
+            remote = shlex.join(["ssh", *BATCH, "--", ssh]) + " " + shlex.quote(remote)
+        command = ["ssh", *options, *BATCH, destination, remote]
+    elif ssh:
+        destination = ssh
+        command = ["ssh", *BATCH, "--", ssh, remote]
+    else:
+        destination = "this machine"
+        command = [sys.executable, "-c", REMOVE_ENVIRONMENT, request]
+    try:
+        completed = subprocess.run(command, capture_output=True, text=True, timeout=timeout, check=False)
+    except subprocess.TimeoutExpired as error:
+        raise click.ClickException(f"{destination} did not answer within {timeout:g} s.") from error
+    if completed.returncode:
+        detail = (completed.stderr or completed.stdout).strip() or f"status {completed.returncode}"
+        raise click.ClickException(f"On {destination}: {detail}")
+    return json.loads(completed.stdout.strip().splitlines()[-1])
+
+
 # The tools an assistant registers, `qibocal-agent`, installed by the
 # application in an environment of their own: they need Python 3.12 or 3.13,
 # which uv provides when this Python is another one.

@@ -6,9 +6,11 @@ import {
   agentConfigurations,
   agentEditorValues,
   agentEntry,
+  agentEnvironment,
   agentNameError,
   agentReports,
   describeAgent,
+  describeAgentEnvironment,
   agentRemotes,
   agentOfReportsKey,
   agentReportsKey,
@@ -91,4 +93,14 @@ test('a run records the queue of its configuration, and its report server is the
   assert.equal(agentReportsKey('chip'), 'agent:local:chip', 'the key the Agents page starts it with')
   assert.deepEqual(agentOfReportsKey(agentReportsKey('chip', 'lab')), { host: 'lab', name: 'chip' })
   assert.equal(agentOfReportsKey('session-x'), null, 'a notebook\'s server is no agent\'s')
+})
+
+test('a configuration\'s environment is its venv, or its name, where its server starts', () => {
+  assert.deepEqual(agentEnvironment({ name: 'lab', host: 'local', entry: {} }), { name: 'lab', venv: 'lab', ssh: null, via: null })
+  assert.deepEqual(agentEnvironment({ name: 'lab', host: 'local', entry: { venv: ' shared ', ssh: 'login' } }), { name: 'lab', venv: 'shared', ssh: 'login', via: null })
+  assert.deepEqual(agentEnvironment({ name: 'lab', host: 'cluster', destination: 'me@login', entry: {} }), { name: 'lab', venv: 'lab', ssh: null, via: 'me@login' },
+    'kept for a machine: on that machine')
+  assert.equal(agentEnvironment({ name: 'lab', host: 'local', entry: { server_python: '/opt/py' } }), null, 'a server interpreter is no managed environment')
+  assert.equal(describeAgentEnvironment(agentEnvironment({ name: 'lab', host: 'local', entry: {} })), '~/.cache/qibocal/agents/envs/lab on this machine')
+  assert.equal(describeAgentEnvironment({ venv: '/scratch/env', ssh: 'node', via: 'me@login' }), '/scratch/env on node, reached from me@login')
 })

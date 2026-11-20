@@ -167,6 +167,7 @@ pub fn run() {
             settings::list_agent_hosts,
             settings::save_agent_hosts,
             cli::push_agents,
+            cli::rebuild_agent_environment,
             cli::start_agent,
             cli::agent_tools,
             process::install_agent_tools,

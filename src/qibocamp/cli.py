@@ -449,6 +449,23 @@ def agents_push(ssh: str, entries: str, remove: tuple[str, ...]):
     click.echo(json.dumps(push(ssh, parsed, list(remove))))
 
 
+@agents.command(name="rebuild")
+@click.argument("name")
+@click.option("--venv", default=None, help="The configuration's environment; default: NAME.")
+@click.option("--ssh", default=None, help="The configuration's SSH destination, where its server starts.")
+@click.option("--via", default=None, help="The SSH destination of the machine the configuration is kept for.")
+def agents_rebuild(name: str, venv: str | None, ssh: str | None, via: str | None):
+    """Delete the managed environment of the agent configuration NAME.
+
+    Where its calibration server starts, resolved as qibocal-agent resolves
+    it, under `~/.cache/qibocal/agents/envs` unless absolute; qibocal-agent
+    creates it again, from the configuration alone, the next time it starts.
+    """
+    from qibocamp.remote.agents import remove_environment
+
+    click.echo(json.dumps(remove_environment(name, venv, ssh, via)))
+
+
 @agents.command(name="install")
 @click.option("--ref", default="main", show_default=True, help="Branch, tag or commit of qibocal-mcp-servers to install.")
 def agents_install(ref: str):

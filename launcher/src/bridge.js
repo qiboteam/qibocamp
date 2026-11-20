@@ -51,6 +51,8 @@ export const desktop = {
   saveMachines: machines => call('save_machines', { machines }),
   saveAgentHosts: hosts => call('save_agent_hosts', { hosts }),
   pushAgents: (ssh, agents, remove = []) => call('push_agents', { ssh, agents, remove }),
+  /** `qibocamp agents rebuild`: a configuration's managed environment deleted, for qibocal-agent to make again. */
+  rebuildAgentEnvironment: ({ name, venv = null, ssh = null, via = null }) => call('rebuild_agent_environment', { name, venv, ssh, via }),
   /** The qibocal-agent the Agents page uses, and installing it where the launcher keeps it. */
   agentTools: () => call('agent_tools'),
   installAgentTools: reference => call('install_agent_tools', { reference }),

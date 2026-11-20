@@ -637,6 +637,33 @@ pub async fn push_agents(ssh: String, agents: Value, remove: Vec<String>) -> Res
     .await?
 }
 
+/// Delete the managed environment of an agent configuration, for
+/// qibocal-agent to create again the next time it starts:
+/// `qibocamp agents rebuild NAME`, where its calibration server starts —
+/// `ssh`, the configuration's destination, reached from `via`, the machine it
+/// is kept for, when it is kept for one.
+#[tauri::command]
+pub async fn rebuild_agent_environment(
+    name: String,
+    venv: Option<String>,
+    ssh: Option<String>,
+    via: Option<String>,
+) -> Result<Value, String> {
+    off_main(move || {
+        let mut arguments = vec!["agents".to_string(), "rebuild".to_string(), name];
+        for (flag, value) in [("--venv", venv), ("--ssh", ssh), ("--via", via)] {
+            if let Some(value) = value.map(|value| value.trim().to_string()).filter(|value| !value.is_empty()) {
+                arguments.push(flag.to_string());
+                arguments.push(value);
+            }
+        }
+        let output = run(&arguments)?;
+        let answer = output.trim().lines().last().unwrap_or_default();
+        serde_json::from_str(answer).map_err(|error| format!("Could not read the rebuild answer: {error}"))
+    })
+    .await?
+}
+
 /// The environment the launcher installs `qibocal-agent` in, with
 /// `qibocamp agents install`: in qibocal-agent's own cache folder.
 pub fn agent_tools_directory() -> PathBuf {
