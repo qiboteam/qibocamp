@@ -35,8 +35,12 @@ the cursor is outlined in the continuous view — `v` switches the view, `b`
 goes back to the search, `d` opens the documentation of the selected protocol,
 `x` downloads its data, `c` toggles its comments (the session's, from the
 header), `n` and `o` open the new and old platform pages, and `w` toggles the
-live mode. Plots are drawn as they come near the viewport, and the rest in the
-idle moments after, so a large report shows its first screen at once. On a
+live mode. The slideshow holds the slide's card alone, the continuous view the
+cards near the viewport (the others keep their place, and what is read does not
+move as they come and go), and plots are drawn only as they come near the
+viewport and let go once far from it, so a large report shows its first screen
+at once and stays as light as a small one;
+printing draws every plot, of every card, the slideshow included. On a
 server with the GraphQL endpoint, a pre-cached report is also *fetched* that
 way: the page opens with the protocols named, and each card's figures arrive
 as it nears the viewport, the rest in idle time. Sidebar entries

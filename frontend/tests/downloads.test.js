@@ -35,7 +35,7 @@ test('authenticated downloads and metadata previews', async t => {
 
   try {
     const store = await vite.ssrLoadModule('/src/store.js')
-    const { downloadApiFile, openApiFile, getReportDownloadFilename } = await vite.ssrLoadModule('/src/utils/apiFiles.js')
+    const { downloadApiFile, openApiFile, getReportDownloadFilename, readBlob } = await vite.ssrLoadModule('/src/utils/apiFiles.js')
     const { default: ApiFileButton } = await vite.ssrLoadModule('/src/components/ApiFileButton.vue')
     const { default: SidebarProtocols } = await vite.ssrLoadModule('/src/components/sidebar/SidebarProtocols.vue')
     const { default: ProtocolCard } = await vite.ssrLoadModule('/src/components/report/ProtocolCard.vue')
@@ -120,6 +120,40 @@ test('authenticated downloads and metadata previews', async t => {
       browser.timers[0].callback()
       assert.equal(browser.revoke.mock.calls[0].arguments[0], 'blob:file-1')
       mock.restoreAll()
+    })
+
+    await t.test('a body is read as a stream, never collected by Response.blob(), which WebKitGTK cannot do for large ones', async () => {
+      const browser = setupBrowser()
+      const chunks = ['zip ', 'by', 'tes']
+      mock.method(globalThis, 'fetch', async () => {
+        const body = new ReadableStream({
+          pull(controller) {
+            if (chunks.length) controller.enqueue(new TextEncoder().encode(chunks.shift()))
+            else controller.close()
+          }
+        })
+        const response = new Response(body, { headers: { 'Content-Type': 'application/zip' } })
+        response.blob = () => { throw new Error('Response.blob() freezes the launcher on large bodies') }
+        return response
+      })
+      assert.equal(await downloadApiFile('/api/reports/run/download/full', 'report.zip'), 'report.zip')
+      assert.equal(browser.blobs[0].type, 'application/zip')
+      assert.equal(await browser.blobs[0].text(), 'zip bytes')
+      await openApiFile('/api/reports/run/meta.json')
+      assert.equal(browser.blobs.length, 2)
+      mock.restoreAll()
+    })
+
+    await t.test('readBlob falls back to blob() where a body cannot be streamed', async () => {
+      const blob = new Blob(['whole'], { type: 'text/plain' })
+      assert.equal(await readBlob({ body: null, blob: async () => blob }), blob)
+    })
+
+    await t.test('the upload of a report reads the downloaded archive as a stream', async () => {
+      const { readFileSync } = await import('node:fs')
+      const source = readFileSync(new URL('../src/components/modals/UploadModal.vue', import.meta.url), 'utf8')
+      assert.match(source, /await readBlob\(download\)/)
+      assert.doesNotMatch(source, /\.blob\(\)/)
     })
 
     await t.test('UTF-8, unquoted, and missing filenames are handled', async () => {

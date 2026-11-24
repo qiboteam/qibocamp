@@ -13,7 +13,7 @@
     />
 
     <!-- Main Report Visualization Panel -->
-    <main ref="reportPanel" class="flex-1 overflow-y-auto p-4 sm:p-8 report-print-container">
+    <main ref="reportPanel" class="flex-1 overflow-y-auto [overflow-anchor:none] p-4 sm:p-8 report-print-container">
       <div v-if="loading" class="flex flex-col items-center justify-center h-64">
         <loading-spinner label="Preparing your report..." />
         <p class="mt-4 text-xs text-gray-400 font-mono">{{ loadingStatus }}</p>
@@ -250,18 +250,31 @@
           </div>
         </div>
 
-        <!-- Protocols List with Figures -->
-        <div ref="protocolList" :class="slideshow ? '' : 'space-y-6'">
-          <protocol-card
-            v-for="(proto, idx) in protocols"
+        <!--
+          Protocols List with Figures: in the slideshow, the slide's card
+          alone — every card when printing, the slideshow included.
+        -->
+        <!--
+          Each protocol's slot keeps its place: in the continuous view, its
+          card is mounted near the viewport only (useCardWindow).
+        -->
+        <div ref="protocolList" :class="slideshow && !printing ? '' : 'space-y-6'">
+          <div
+            v-for="{ proto, index } in cards"
             :key="proto.id"
-            :proto="proto"
-            :index="idx"
-            :report-id="reportId"
-            :focused="cursorShown && !slideshow && selectedId === proto.id"
-            @update-notes="proto.notes = $event"
-            :class="{ 'slide-hidden': slideshow && selectedId !== proto.id }"
-          />
+            :id="`proto-${proto.id}`"
+            :ref="cardWindow.slotRef(proto.id)"
+            :style="cardWindow.slotStyle(proto.id)"
+          >
+            <protocol-card
+              v-if="cardWindow.isMounted(proto.id)"
+              :proto="proto"
+              :index="index"
+              :report-id="reportId"
+              :focused="cursorShown && !slideshow && selectedId === proto.id"
+              @update-notes="proto.notes = $event"
+            />
+          </div>
         </div>
       </div>
     </main>
@@ -280,6 +293,7 @@ import { desktopWidget, publishPage } from '../utils/desktop.js'
 import { isPlainKey, isTypingTarget } from '../utils/shortcuts.js'
 import { downloadApiFile, getReportDownloadFilename } from '../utils/apiFiles.js'
 import { getProtocolDocUrl } from '../utils/protocolDocs.js'
+import { setPrinting as setPlotPrinting } from '../utils/plotDrawing.js'
 
 /** The launcher's bell, when this page is inside it. */
 const desktopBell = desktopWidget('bell')
@@ -288,6 +302,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { state, ensureServersLoaded, hasActiveSearchFilters, isViewer, canEdit, canManageQibocal } from '../store.js'
 import { useReportDetail } from '../composables/useReportDetail.js'
 import { useMagneticFollow } from '../composables/useMagneticFollow.js'
+import { useCardWindow } from '../composables/useCardWindow.js'
 import { slideFromQuery, useReportSlideshow } from '../composables/useReportSlideshow.js'
 import LoadingSpinner from '../components/LoadingSpinner.vue'
 import Sidebar from '../components/Sidebar.vue'
@@ -368,6 +383,23 @@ const { slideshow, selectedId, slideIndex, showSlide, selectSlide, moveSlide, ha
   context: () => [reportId.value, state.activeServer?.id, state.activeServer?.url],
   container: reportPanel,
   navigate: routeToSlide
+})
+/** While printing: every card is on the page, and every plot drawn. */
+const printing = ref(false)
+/**
+ * The cards on the page, each with its place in the report. The slideshow
+ * shows one: the others, hidden, were each drawn anyway, and a report of a
+ * hundred protocols kept a hundred cards of plots to show one.
+ */
+const cards = computed(() => {
+  const all = protocols.value.map((proto, index) => ({ proto, index }))
+  if (!slideshow.value || printing.value) return all
+  return all.filter(({ proto }) => proto.id === selectedId.value)
+})
+/** The continuous view's cards, mounted near the viewport only. */
+const cardWindow = useCardWindow({
+  container: reportPanel,
+  active: () => !slideshow.value && !printing.value
 })
 const previewOrders = [
   { value: 'newest', label: 'Newest first' },
@@ -575,15 +607,37 @@ function onKeydown(event) {
   if (!event.defaultPrevented) onReportKeys(event)
 }
 
+/** How long printing waits for the outputs still on their way. */
+const PRINT_OUTPUTS_WAIT_MS = 60_000
+
+/** Every card on the page with its outputs, and every plot drawn: then the print dialog. */
 async function handlePrintPDF() {
+  printing.value = true
+  await nextTick()
+  const deadline = Date.now() + PRINT_OUTPUTS_WAIT_MS
+  while (protocols.value.some(proto => ['pending', 'loading'].includes(proto.outputs)) && Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 200))
+  }
+  await nextTick()
+  await setPlotPrinting(true)
   window.dispatchEvent(new Event('resize'))
   await new Promise(r => setTimeout(r, 120))
   window.print()
 }
 
+/** Printing from the browser's menu: every card at once, its plots drawn as it mounts. */
+function onBeforePrint() {
+  printing.value = true
+}
+function onAfterPrint() {
+  printing.value = false
+}
+
 onMounted(async () => {
   document.addEventListener('keydown', onKeydown)
   document.addEventListener('pointerdown', hideCursor)
+  globalThis.window?.addEventListener('beforeprint', onBeforePrint)
+  globalThis.window?.addEventListener('afterprint', onAfterPrint)
   publishPage('report')
   await ensureServersLoaded()
   await loadReportData()
@@ -592,6 +646,8 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', onKeydown)
   document.removeEventListener('pointerdown', hideCursor)
+  globalThis.window?.removeEventListener('beforeprint', onBeforePrint)
+  globalThis.window?.removeEventListener('afterprint', onAfterPrint)
   publishPage(null)
 })
 

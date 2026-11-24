@@ -107,6 +107,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { state, getActiveAuthToken } from '../../store.js'
 import { apiFetch, apiUploadCapability, apiUploadReport } from '../../api.js'
 import { normalizeUrl } from '../../utils/url.js'
+import { readBlob } from '../../utils/apiFiles.js'
 import { uploadDestinations, uploadFailure, uploadState } from '../../utils/uploads.js'
 
 const props = defineProps({
@@ -187,7 +188,7 @@ async function upload() {
       result.text = 'Downloading…'
       const download = await apiFetch(`/api/reports/${encodeURIComponent(result.id)}/download/full`, {}, from.value)
       if (!download.ok) throw new Error(`The report could not be downloaded (${download.status}).`)
-      const archive = await download.blob()
+      const archive = await readBlob(download)
       result.text = 'Uploading…'
       const response = await apiUploadReport(archive, target)
       if (!response.ok) {

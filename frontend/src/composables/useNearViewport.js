@@ -1,4 +1,5 @@
 import { onBeforeUnmount, onMounted, watch } from 'vue'
+import { scrollRoot } from '../utils/plotDrawing.js'
 
 /** How far ahead of the viewport "near" begins. */
 const MARGIN = '1200px'
@@ -19,9 +20,10 @@ export function useNearViewport(target, onNear) {
       onNear()
       return
     }
+    // Measured from the container the element scrolls in: from the viewport, the margin stops at its edge.
     observer = new IntersectionObserver(entries => {
       if (entries.some(entry => entry.isIntersecting)) onNear()
-    }, { rootMargin: MARGIN })
+    }, { root: scrollRoot(element), rootMargin: MARGIN })
     observer.observe(element)
   }
 
