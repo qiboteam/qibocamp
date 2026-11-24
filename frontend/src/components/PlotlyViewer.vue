@@ -15,6 +15,7 @@
 import { ref, onMounted, onUnmounted, watch, nextTick, toRaw } from 'vue'
 import Plotly from 'plotly.js-dist-min'
 import { copyToClipboard } from '../utils/clipboard.js'
+import { redrawPlot, registerPlot, unregisterPlot } from '../utils/plotDrawing.js'
 
 const props = defineProps({
   figure: { type: Object, required: true },
@@ -26,83 +27,32 @@ const plotContainer = ref(null)
 let isRendered = false
 
 /**
- * Plots are drawn when they come near the viewport, and the rest one at a
- * time in the idle moments after — so a large report shows its first
- * screen at once, keeps animating while the others are prepared, and still
- * has them ready when scrolled to. The queue is shared by every viewer on
- * the page; what is near goes first.
+ * Drawn when near the viewport, released when far from it, every one drawn
+ * for printing: see `utils/plotDrawing.js`. The element registered, and
+ * kept, is the wrapper; the plot is drawn in the container inside it.
  */
-const NEAR = '1200px'
-const queue = {
-  near: new Set(),
-  later: new Set(),
-  draining: false
-}
-let lazyObserver = null
-function observer() {
-  if (lazyObserver || typeof IntersectionObserver === 'undefined') return lazyObserver
-  lazyObserver = new IntersectionObserver(entries => {
-    for (const entry of entries) {
-      const viewer = entry.target.__viewer
-      if (!viewer) continue
-      if (entry.isIntersecting) {
-        queue.later.delete(viewer)
-        queue.near.add(viewer)
-      }
-    }
-    drain()
-  }, { rootMargin: NEAR })
-  return lazyObserver
-}
-function idle(callback) {
-  if (typeof requestIdleCallback === 'function') requestIdleCallback(callback, { timeout: 500 })
-  else setTimeout(callback, 50)
-}
-async function drain() {
-  if (queue.draining) return
-  queue.draining = true
-  try {
-    while (queue.near.size || queue.later.size) {
-      const viewer = queue.near.values().next().value || queue.later.values().next().value
-      queue.near.delete(viewer)
-      queue.later.delete(viewer)
-      await viewer()
-      // Let the page breathe between plots: the ones near the viewport
-      // follow on the next frame, the others wait for an idle moment.
-      await new Promise(resolve => (queue.near.size ? requestAnimationFrame(resolve) : idle(resolve)))
-    }
-  } finally {
-    queue.draining = false
-  }
-}
-let plotRequest = null
+let registered = null
 function schedulePlot() {
-  if (!plotRequest) {
-    plotRequest = async () => {
-      if (plotWrapper.value) await renderPlot()
-    }
-  }
-  const wrapper = plotWrapper.value
-  if (!wrapper) return
-  wrapper.__viewer = plotRequest
-  const io = observer()
-  if (!io) {
-    queue.near.add(plotRequest)
-    drain()
-    return
-  }
-  io.observe(wrapper)
-  queue.later.add(plotRequest)
-  drain()
+  registered = plotWrapper.value
+  registerPlot(registered, { draw: renderPlot, release: releasePlot })
 }
 function unschedulePlot() {
-  if (!plotRequest) return
-  queue.near.delete(plotRequest)
-  queue.later.delete(plotRequest)
-  if (plotWrapper.value) {
-    lazyObserver?.unobserve(plotWrapper.value)
-    delete plotWrapper.value.__viewer
-  }
+  unregisterPlot(registered)
+  registered = null
+}
+/** Each drawing, counted: one a release overtook draws nothing. */
+let drawing = 0
+/** Let the graph go, keeping its height: the page does not move under the reader. */
+function releasePlot() {
+  drawing += 1
+  const container = plotContainer.value
+  if (!container || !isRendered) return
+  const height = container.offsetHeight
+  if (typeof container.removeAllListeners === 'function') container.removeAllListeners('plotly_click')
+  container.removeEventListener('click', handleNativeClick)
+  Plotly.purge(container)
+  if (height) container.style.height = `${height}px`
+  isRendered = false
 }
 let lastCopiedTime = 0
 let copyFeedbackTimer = null
@@ -255,10 +205,13 @@ function attachPlotListeners() {
 }
 
 async function renderPlot() {
+  const current = ++drawing
   await nextTick()
-  if (!plotContainer.value || !props.figure) return
+  if (current !== drawing || !plotContainer.value || !props.figure) return
 
   const { rawData, rawLayout } = getCleanDataAndLayout()
+  // The height kept by a release goes: the graph sizes the container again.
+  plotContainer.value.style.removeProperty('height')
 
   const config = {
     responsive: true,
@@ -287,29 +240,22 @@ function handleResize() {
   })
 }
 
-/** Printing wants every plot, drawn or not, now. */
-function handlePrint() {
-  if (isRendered) handleResize()
-  else renderPlot()
-}
-
 onMounted(() => {
   schedulePlot()
   window.addEventListener('resize', handleResize)
-  window.addEventListener('beforeprint', handlePrint)
+  // Printing draws every plot (utils/plotDrawing.js); the page's size is the screen's again after.
+  window.addEventListener('beforeprint', handleResize)
   window.addEventListener('afterprint', handleResize)
 })
 
 // Watch replacements from Live without traversing mutable Plotly figures.
-watch(() => [props.figure, props.figure?.id, props.figure?.title], () => {
-  if (isRendered) renderPlot()
-  else schedulePlot()
-})
+watch(() => [props.figure, props.figure?.id, props.figure?.title], () => redrawPlot(registered))
 
 onUnmounted(() => {
+  drawing += 1
   unschedulePlot()
   window.removeEventListener('resize', handleResize)
-  window.removeEventListener('beforeprint', handlePrint)
+  window.removeEventListener('beforeprint', handleResize)
   window.removeEventListener('afterprint', handleResize)
   if (resizeTimer) cancelAnimationFrame(resizeTimer)
   if (copyFeedbackTimer) clearTimeout(copyFeedbackTimer)

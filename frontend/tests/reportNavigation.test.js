@@ -65,3 +65,17 @@ test('compact slideshow controls retain ordering, accessible names, actions, and
   assert.equal(directive(next, 'on', 'click'), 'moveSlide(1)')
   assert.equal(directive(next, 'bind', 'disabled'), 'slideIndex === protocols.length')
 })
+
+test('the slideshow mounts the slide\'s card alone, every card only when printing', () => {
+  const card = elements.find(({ node }) => node.tag === 'protocol-card').node
+  assert.equal(directive(card, 'for'), '{ proto, index } in cards')
+  assert.equal(directive(card, 'bind', 'index'), 'index')
+  // Hidden cards were mounted, and their plots drawn, all the same.
+  assert.equal(directive(card, 'bind', 'class'), undefined)
+  const script = descriptor.scriptSetup.content
+  assert.match(script, /if \(!slideshow\.value \|\| printing\.value\) return all/)
+  assert.match(script, /all\.filter\(\(\{ proto \}\) => proto\.id === selectedId\.value\)/)
+  // The print button waits for every card and every plot.
+  assert.match(script, /printing\.value = true[\s\S]*await setPlotPrinting\(true\)[\s\S]*window\.print\(\)/)
+  assert.match(script, /addEventListener\('afterprint', onAfterPrint\)/)
+})

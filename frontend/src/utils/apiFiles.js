@@ -16,6 +16,26 @@ async function fetchFile(path, server) {
   return response
 }
 
+/**
+ * A response's body as a Blob, read chunk by chunk.
+ *
+ * WebKitGTK, the desktop launcher's engine, spins the page's thread without
+ * end when `Response.blob()` collects a large body — a 177 MB report archive
+ * never came back — while reading the same body as a stream keeps the page
+ * responsive throughout. Where the body cannot be streamed, `blob()` it is.
+ */
+export async function readBlob(response) {
+  const reader = response.body?.getReader?.()
+  if (!reader) return response.blob()
+  const parts = []
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    parts.push(value)
+  }
+  return new Blob(parts, { type: response.headers.get('Content-Type') || '' })
+}
+
 function getFilename(response, fallback) {
   const disposition = response.headers.get('Content-Disposition') || ''
   const encoded = disposition.match(/(?:^|;)\s*filename\*=utf-8''([^;]+)/i)
@@ -37,7 +57,7 @@ export function getReportDownloadFilename(reportId, suffix = '') {
 export async function downloadApiFile(path, filename = 'download.zip', server = state.activeServer) {
   const response = await fetchFile(path, server)
   const name = getFilename(response, filename)
-  const url = URL.createObjectURL(await response.blob())
+  const url = URL.createObjectURL(await readBlob(response))
   const link = document.createElement('a')
   link.href = url
   link.download = name
@@ -70,7 +90,7 @@ export async function openApiFile(path, server = state.activeServer, name = path
   let url
   try {
     const response = await fetchFile(path, server)
-    const blob = await response.blob()
+    const blob = await readBlob(response)
     if (tab.closed) throw new Error('The file preview tab was closed.')
     url = URL.createObjectURL(blob)
     tab.location.replace(url)
