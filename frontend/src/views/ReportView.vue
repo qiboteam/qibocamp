@@ -13,7 +13,7 @@
     />
 
     <!-- Main Report Visualization Panel -->
-    <main ref="reportPanel" class="flex-1 overflow-y-auto p-4 sm:p-8 report-print-container">
+    <main ref="reportPanel" class="flex-1 overflow-y-auto [overflow-anchor:none] p-4 sm:p-8 report-print-container">
       <div v-if="loading" class="flex flex-col items-center justify-center h-64">
         <loading-spinner label="Preparing your report..." />
         <p class="mt-4 text-xs text-gray-400 font-mono">{{ loadingStatus }}</p>
@@ -254,16 +254,27 @@
           Protocols List with Figures: in the slideshow, the slide's card
           alone — every card when printing, the slideshow included.
         -->
+        <!--
+          Each protocol's slot keeps its place: in the continuous view, its
+          card is mounted near the viewport only (useCardWindow).
+        -->
         <div ref="protocolList" :class="slideshow && !printing ? '' : 'space-y-6'">
-          <protocol-card
+          <div
             v-for="{ proto, index } in cards"
             :key="proto.id"
-            :proto="proto"
-            :index="index"
-            :report-id="reportId"
-            :focused="cursorShown && !slideshow && selectedId === proto.id"
-            @update-notes="proto.notes = $event"
-          />
+            :id="`proto-${proto.id}`"
+            :ref="cardWindow.slotRef(proto.id)"
+            :style="cardWindow.slotStyle(proto.id)"
+          >
+            <protocol-card
+              v-if="cardWindow.isMounted(proto.id)"
+              :proto="proto"
+              :index="index"
+              :report-id="reportId"
+              :focused="cursorShown && !slideshow && selectedId === proto.id"
+              @update-notes="proto.notes = $event"
+            />
+          </div>
         </div>
       </div>
     </main>
@@ -291,6 +302,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { state, ensureServersLoaded, hasActiveSearchFilters, isViewer, canEdit, canManageQibocal } from '../store.js'
 import { useReportDetail } from '../composables/useReportDetail.js'
 import { useMagneticFollow } from '../composables/useMagneticFollow.js'
+import { useCardWindow } from '../composables/useCardWindow.js'
 import { slideFromQuery, useReportSlideshow } from '../composables/useReportSlideshow.js'
 import LoadingSpinner from '../components/LoadingSpinner.vue'
 import Sidebar from '../components/Sidebar.vue'
@@ -383,6 +395,11 @@ const cards = computed(() => {
   const all = protocols.value.map((proto, index) => ({ proto, index }))
   if (!slideshow.value || printing.value) return all
   return all.filter(({ proto }) => proto.id === selectedId.value)
+})
+/** The continuous view's cards, mounted near the viewport only. */
+const cardWindow = useCardWindow({
+  container: reportPanel,
+  active: () => !slideshow.value && !printing.value
 })
 const previewOrders = [
   { value: 'newest', label: 'Newest first' },

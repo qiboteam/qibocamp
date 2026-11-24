@@ -1,6 +1,6 @@
 <template>
+  <!-- Its `proto-<id>` is its slot's, in the report page: there whether the card is mounted or not. -->
   <div
-    :id="`proto-${proto.id}`"
     ref="root"
     class="bm-card p-6 border border-gray-100 page-break"
     :class="{ 'outline outline-2 outline-offset-2 outline-[#833dff]/45': focused }"

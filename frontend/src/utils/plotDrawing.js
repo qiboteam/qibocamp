@@ -18,9 +18,9 @@
  */
 
 /** How far ahead of the viewport a plot is drawn. */
-export const NEAR = '1200px'
+export const NEAR = '800px'
 /** How far from the viewport a drawn plot is released: further than NEAR, so a plot at the edge is not drawn and released by turns. */
-export const FAR = '3600px'
+export const FAR = '2400px'
 
 const viewers = new Map()
 const queue = new Set()
